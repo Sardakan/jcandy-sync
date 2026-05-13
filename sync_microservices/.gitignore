@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.log
+queue.json
+failed_queue.json
+.DS_Store
