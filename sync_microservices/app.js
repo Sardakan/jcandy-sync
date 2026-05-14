@@ -12,10 +12,9 @@ app.use(express.json());
 // --- ТЕСТОВЫЕ ДАННЫЕ ДЛЯ МИГРАЦИИ ---
 const TEST_DATA = {
 	products: ["MS-TEST-0001", "MS-TEST-0002", "MS-TEST-0003", "MS-TEST-0004"],
-	orders: ["cmnj1odnb001ao31q0kgjvz8c"], // Рабочий тестовый ID (QK9AHDTS)
-	customers: ["cmox9yh7w0004oz5whzwnie74"] // MS Counterparty Full 02
+	orders: ["TNJVUUBS", "LG7B6JX3", "QK9AHDTS", "SCWDVN6P"],
+	customers: ["moysklad-customer-test+01@jcandy.local", "moysklad-customer-test+02@jcandy.local"]
 };
-
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 /**
