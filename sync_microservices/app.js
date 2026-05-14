@@ -227,8 +227,78 @@ app.post("/api/v1/admin/migrate-orders", (req, res) =>
 app.post("/api/v1/admin/migrate-counterparties", (req, res) => 
 	runMigration("counterparty", TEST_DATA.customers, (id) => `/customers/${id}`, res));
 
-app.post("/api/v1/admin/clear-queue", async (req, res) => {
-	queue.queue = [];
+/**
+ * Массовая миграция товаров с сайта (пагинация по 50)
+ */
+app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
+	const limit = 50;
+	let offset = parseInt(req.query.offset) || 0;
+
+	log(`[MIGRATION] Инициализация массовой миграции (шаг 50)...`);
+
+	try {
+		// 1. Получаем первую порцию данных и информацию о пагинации
+		const response = await siteRequest("GET", `/products?limit=${limit}&offset=${offset}`);
+		
+		// Извлекаем товары и общее количество
+		const items = response.data || (Array.isArray(response) ? response : []);
+		const total = response.pagination?.total || 0;
+
+		if (items.length === 0) {
+			return res.json({ message: "Товары на сайте не найдены", total: 0 });
+		}
+
+		log(`[MIGRATION] Всего товаров на сайте: ${total}. Начинаем фоновую обработку.`);
+
+		// Отвечаем сразу, чтобы Render не оборвал соединение по таймауту
+		res.json({ 
+			message: "Миграция запущена в фоновом режиме", 
+			total_to_process: total,
+			start_offset: offset,
+			batch_size: limit 
+		});
+
+		// 2. Запускаем фоновый процесс
+		(async () => {
+			let currentOffset = offset;
+			let processedInThisRun = 0;
+			let currentItems = items;
+
+			while (currentItems.length > 0) {
+				log(`[MIGRATION] Обработка пачки: offset=${currentOffset}, count=${currentItems.length}`);
+
+				for (const item of currentItems) {
+					await queue.add("product", item);
+					processedInThisRun++;
+				}
+
+				currentOffset += currentItems.length;
+				log(`[MIGRATION] Прогресс: ${currentOffset} / ${total}`);
+
+				// Если достигли конца
+				if (currentOffset >= total) break;
+
+				// Загружаем следующую пачку
+				try {
+					const nextResponse = await siteRequest("GET", `/products?limit=${limit}&offset=${currentOffset}`);
+					currentItems = nextResponse.data || (Array.isArray(nextResponse) ? nextResponse : []);
+				} catch (err) {
+					log(`[MIGRATION] Ошибка при загрузке пачки (offset ${currentOffset}): ${err.message}`, "ERROR");
+					break;
+				}
+
+				// Пауза 300мс, чтобы не перегружать API сайта
+				await new Promise(resolve => setTimeout(resolve, 300));
+			}
+			log(`[MIGRATION] Массовая миграция завершена. Всего обработано: ${processedInThisRun}`);
+		})();
+
+	} catch (e) {
+		log(`[MIGRATION] Ошибка при запуске миграции: ${e.message}`, "ERROR");
+		if (!res.headersSent) res.status(500).json({ error: e.message });
+	}
+});
+app.post("/api/v1/admin/clear-queue", async (req, res) => {	queue.queue = [];
 	await queue.save();
 	log("Очередь задач очищена вручную");
 	res.json({ message: "Очередь очищена" });
