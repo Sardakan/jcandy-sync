@@ -52,10 +52,12 @@ const msClient = {
 		}
 	},
 	async findProductsByBarcodes(barcodes) {
-		if (!barcodes || barcodes.length === 0) return [];
+		const validBarcodes = (barcodes || []).filter((b) => b && String(b).trim() !== "");
+		if (validBarcodes.length === 0) return [];
+
 		try {
-			const filter = barcodes.map((b) => `barcode=${b}`).join(";");
-			const response = await this.request("GET", `/entity/assortment?filter=${filter}`);
+			const filter = validBarcodes.map((b) => `barcode=${String(b).trim()}`).join(";");
+			const response = await this.request("GET", `/entity/assortment?filter=${encodeURIComponent(filter)}`);
 			return response.data.rows || [];
 		} catch (error) {
 			log(`Ошибка массового поиска товаров: ${error.message}`, "ERROR");
