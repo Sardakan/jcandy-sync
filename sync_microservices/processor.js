@@ -352,22 +352,25 @@ const syncProcessor = {
 		});
 
 		const toCreate = [];
+		let skippedCount = 0;
+
 		for (const item of items) {
 			if (existingBarcodes.has(item.barcode)) {
-				log(`[MASS] Пропуск: ${item.barcode} уже есть в МС`);
+				skippedCount++;
 				continue;
 			}
 			const msObj = await this.mapToMsProduct(item);
 			toCreate.push(msObj);
 		}
 
+		log(`[MASS-PROCESSOR] Статистика пачки: Всего ${items.length}, Пропущено (уже есть) ${skippedCount}, К созданию ${toCreate.length}`);
+
 		if (toCreate.length > 0) {
-			log(`[MASS] Отправка пачки в МС: ${toCreate.length} шт.`);
 			try {
 				await msClient.request("POST", "/entity/product", toCreate);
-				log(`[MASS] Пачка успешно создана (${toCreate.length} шт.)`);
+				log(`[MASS-PROCESSOR] Успешно создано товаров в МС: ${toCreate.length}`);
 			} catch (e) {
-				log(`[MASS] Ошибка при создании пачки: ${e.message}`, "ERROR");
+				log(`[MASS-PROCESSOR] Ошибка при массовом создании: ${e.message}`, "ERROR");
 			}
 		}
 	},

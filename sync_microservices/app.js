@@ -22,9 +22,10 @@ const TEST_DATA = {
  */
 const handleQueueRequest = (entity, idField) => async (req, res) => {
 	const data = req.body;
+	log(`[EXTERNAL API] Входящие данные (${entity}): ${JSON.stringify(data, null, 2)}`);
+	
 	// Ищем ID во всех возможных местах (параметры URL, тело запроса, специфичные поля)
 	const id = req.params[idField] || data[idField] || data.id || data.orderId || data.barcode;
-
 	if (!id && req.method === "POST") {
 		log(`[EXTERNAL API] Ошибка: отсутствует ID для сущности ${entity}`, "WARN");
 		return res.status(400).json({ error: `Missing identifier (${idField})` });
