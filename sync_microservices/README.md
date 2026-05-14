@@ -50,19 +50,19 @@
 
 ### 2. Массовая миграция (Тестовые данные)
 Запрашивает список предопределенных ID с сайта и ставит их в очередь.
-* `POST http://localhost:3000/api/v1/admin/migrate` — Миграция тестовых товаров
-* `POST http://localhost:3000/api/v1/admin/migrate-orders` — Миграция тестовых заказов
-* `POST http://localhost:3000/api/v1/admin/migrate-counterparties` — Миграция тестовых контрагентов
+* `POST https://jcandy-sync.onrender.com/api/v1/admin/migrate` — Миграция тестовых товаров
+* `POST https://jcandy-sync.onrender.com/api/v1/admin/migrate-orders` — Миграция тестовых заказов
+* `POST https://jcandy-sync.onrender.com/api/v1/admin/migrate-counterparties` — Миграция тестовых контрагентов
 
 ### 3. Проверка данных в МойСклад (FETCH)
 Прямые запросы в API МойСклад для проверки текущего состояния.
-* `GET /api/v1/external/products/:barcode` — Посмотреть товар в МС по штрихкоду
-* `GET /api/v1/external/orders/:id` — Посмотреть заказ в МС по номеру (name)
-* `GET /api/v1/external/counterparties/:email` — Посмотреть контрагента в МС по Email
+* `GET https://jcandy-sync.onrender.com/api/v1/external/products/:barcode` — Посмотреть товар в МС по штрихкоду
+* `GET https://jcandy-sync.onrender.com/api/v1/external/orders/:id` — Посмотреть заказ в МС по номеру (name)
+* `GET https://jcandy-sync.onrender.com/api/v1/external/counterparties/:email` — Посмотреть контрагента в МС по Email
 
 ### 4. Управление очередью и Вебхуки
-* `POST /api/v1/admin/clear-queue` — Очистить очередь задач (`queue.json`)
-* `POST /api/v1/webhooks/ms` — Прием вебхуков от МойСклад (обновление статусов)
+* `POST https://jcandy-sync.onrender.com/api/v1/admin/clear-queue` — Очистить очередь задач (`queue.json`)
+* `POST https://jcandy-sync.onrender.com/api/v1/webhooks/ms` — Прием вебхуков от МойСклад (обновление статусов)
 
 ## Запуск
 

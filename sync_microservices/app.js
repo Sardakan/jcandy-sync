@@ -106,7 +106,7 @@ async function handleWebhook(req, res) {
 		for (const event of events) {
 			const type = event.meta.type;
 
-			// 1. Обработка остатков (для заказов, приемок и отгрузок)
+			// 1. Обработка остатков (только документы)
 			if (["customerorder", "supply", "demand"].includes(type)) {
 				log(`[MS WEBHOOK] Изменение остатков в документе ${type}`);
 				try {
@@ -119,15 +119,40 @@ async function handleWebhook(req, res) {
 				}
 			}
 
-			// 2. Обработка статуса заказа
+			// 2. Обработка данных товара (страна, цены и т.д.)
+			if (type === "product" && event.action === "UPDATE") {
+				log(`[MS WEBHOOK] Обновление карточки товара`);
+				try {
+					const response = await msClient.request("GET", event.meta.href.replace(CONFIG.MS_API_BASE, "") + "?expand=country");
+					syncProcessor.syncProductToSite(response.data).catch((e) => log(`Ошибка синхронизации товара: ${e.message}`, "ERROR"));
+				} catch (e) {
+					log(`Ошибка при получении данных товара: ${e.message}`, "ERROR");
+				}
+			}
+
+			// 3. Обработка контрагентов (из МС на сайт)
+			if (type === "counterparty" && event.action === "UPDATE") {
+				log(`[MS WEBHOOK] Обновление контрагента`);
+				try {
+					const response = await msClient.request("GET", event.meta.href.replace(CONFIG.MS_API_BASE, ""));
+					syncProcessor.syncCounterpartyToSite(response.data).catch((e) => log(`Ошибка синхронизации контрагента: ${e.message}`, "ERROR"));
+				} catch (e) {
+					log(`Ошибка при получении данных контрагента: ${e.message}`, "ERROR");
+				}
+			}
+
+			// 4. Обработка статуса заказа (из МС на сайт)
 			if (type === "customerorder" && event.action === "UPDATE") {
-				// Получаем полные данные заказа из МС
-				const response = await msClient.request("GET", event.meta.href.replace(CONFIG.MS_API_BASE, ""));
-				const data = response.data;
+				try {
+					const response = await msClient.request("GET", event.meta.href.replace(CONFIG.MS_API_BASE, ""));
+					const data = response.data;
 
-				// Определяем имя статуса по его href из конфига				const statusEntry = Object.entries(CONFIG.ORDER_STATES).find(([_, href]) => href === data.state?.meta?.href);
-				const statusName = statusEntry ? statusEntry[0] : "pending";
+					if (data.state) {
+						log(`[MS WEBHOOK] Статус в МС: "${data.state.name}"`);
+					}
 
+					const statusEntry = Object.entries(CONFIG.ORDER_STATES).find(([_, href]) => href === data.state?.meta?.href);
+					const statusName = statusEntry ? statusEntry[0] : "pending";
 				// Используем externalCode (ID сайта), так как именно по нему сайт ищет заказ
 				const orderId = data.externalCode;
 				if (!orderId) {
@@ -140,11 +165,13 @@ async function handleWebhook(req, res) {
 					updatedAt: new Date().toISOString(),
 				};
 
-				log(`[TO SITE] Обновление статуса заказа ${orderId} -> ${statusName}`);
-				await siteRequest("PATCH", `/orders/${orderId}`, updatePayload);
+					log(`[TO SITE] Обновление статуса заказа ${orderId} -> ${statusName}`);
+					await siteRequest("PATCH", `/orders/${orderId}`, updatePayload);
+				} catch (e) {
+					log(`Ошибка при обновлении статуса заказа: ${e.message}`, "ERROR");
+				}
 			}
-		}
-		res.status(200).send("OK");
+		}		res.status(200).send("OK");
 	} catch (err) {
 		log(`Ошибка при обработке вебхука: ${err.message}`, "ERROR");
 		res.status(500).send("Error");

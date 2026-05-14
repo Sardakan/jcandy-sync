@@ -339,7 +339,7 @@ const syncProcessor = {
 						barcode: barcode,
 						stock: msClient.calculateAvailableStock(product),
 						country: product.country?.name || undefined,
-					};				
+					};
 				})
 				.filter(Boolean);
 
@@ -350,6 +350,103 @@ const syncProcessor = {
 			}
 		} catch (e) {
 			log(`[PROCESSOR] Ошибка при синхронизации остатков документа: ${e.message}`, "ERROR");
+		}
+	},
+
+	/**
+	 * Полная синхронизация данных товара из МС на сайт 
+	 */
+	async syncProductToSite(data) {
+		const barcode = data.barcodes ? data.barcodes[0].code128 || data.barcodes[0].ean13 : null;
+		if (!barcode) return;
+
+		const getAttr = (name) => {
+			const attr = data.attributes ? data.attributes.find((a) => a.name === name) : null;
+			return attr ? attr.value : null;
+		};
+
+		const handledAttrNames = [
+			"Брэнд", "Опубликован", "packageWeight", "packLengthMm", "packWidthMm", 
+			"packHeightMm", "protein", "fat", "carbs", "kcal", "Тэги", "Бейджи"
+		];
+
+		const rawAttributes = [];
+		if (data.attributes) {
+			data.attributes.forEach((attr) => {
+				if (!handledAttrNames.includes(attr.name)) {
+					rawAttributes.push({ name: attr.name, value: attr.value });
+				}
+			});
+		}
+
+		const updatePayload = {
+			title: data.name,
+			barcode: barcode,
+			externalId: data.externalId,
+			sku: data.code,
+			slug: data.article,
+			country: data.country?.name || undefined,
+			priceCurrent: data.salePrices ? data.salePrices[0].value / 100 : null,
+			priceOld: data.salePrices && data.salePrices[1] ? data.salePrices[1].value / 100 : null,
+			description: data.description || "",
+			brand: getAttr("Брэнд"),
+			isPublished: getAttr("Опубликован") === "true" || getAttr("Опубликован") === true,
+			stock: msClient.calculateAvailableStock(data),
+
+			weights: {
+				weightG: data.weight ? data.weight * 1000 : null,
+				volumeMl: data.volume || null,
+				packageWeightG: getAttr("packageWeight") ? Number(getAttr("packageWeight")) : null,
+			},
+
+			attributes: {
+				packLengthMm: getAttr("packLengthMm") ? Number(getAttr("packLengthMm")) : null,
+				packWidthMm: getAttr("packWidthMm") ? Number(getAttr("packWidthMm")) : null,
+				packHeightMm: getAttr("packHeightMm") ? Number(getAttr("packHeightMm")) : null,
+			},
+
+			nutrition: {
+				protein: getAttr("protein") ? Number(getAttr("protein")) : null,
+				fat: getAttr("fat") ? Number(getAttr("fat")) : null,
+				carbs: getAttr("carbs") ? Number(getAttr("carbs")) : null,
+				kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
+			},
+
+			tags: getAttr("Тэги") ? getAttr("Тэги").split(",").map((t) => t.trim()) : [],
+			badges: getAttr("Бейджи") ? getAttr("Бейджи").split(",").map((t) => t.trim()) : [],
+			rawAttributes: rawAttributes,
+			updatedAt: new Date().toISOString(),
+		};
+
+		log(`[TO SITE] Полное обновление товара ${barcode} (Страна: ${updatePayload.country})`);
+		await siteRequest("PATCH", `/products/${barcode}`, updatePayload);
+	},
+
+	/**
+	 * Синхронизация контрагента из МС на сайт
+	 */
+	async syncCounterpartyToSite(data) {
+		const email = data.email;
+		if (!email) {
+			log(`[PROCESSOR] Пропуск контрагента ${data.id}: отсутствует email`, "WARN");
+			return;
+		}
+
+		const updatePayload = {
+			email: email,
+			name: data.name,
+			phone: data.phone,
+			address: data.actualAddress,
+			externalId: data.externalId || data.code,
+			notes: data.description,
+			updatedAt: new Date().toISOString(),
+		};
+
+		log(`[TO SITE] Обновление контрагента ${email}`);
+		try {
+			await siteRequest("PATCH", `/customers/${encodeURIComponent(email)}`, updatePayload);
+		} catch (e) {
+			log(`[PROCESSOR] Ошибка отправки контрагента на сайт: ${e.message}`, "ERROR");
 		}
 	},
 };
