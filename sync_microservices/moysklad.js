@@ -16,12 +16,10 @@ const msClient = {
 
 	async request(method, endpoint, data = null) {
 		try {
-
 			return await msApiClient({ method, url: endpoint, data });
-		} catch (err) {			
-			const errorDetail = err.response && err.response.data && err.response.data.errors 
-				? JSON.stringify(err.response.data.errors, null, 2) 
-				: err.message;
+		} catch (err) {
+			const errorDetail =
+				err.response && err.response.data && err.response.data.errors ? JSON.stringify(err.response.data.errors, null, 2) : err.message;
 			log(`Ошибка API МоегоСклада (${method} ${endpoint}): ${errorDetail}`, "ERROR");
 			throw err;
 		}
@@ -56,14 +54,14 @@ const msClient = {
 	async findProductsByBarcodes(barcodes) {
 		if (!barcodes || barcodes.length === 0) return [];
 		try {
-			const filter = barcodes.map(b => `barcode=${b}`).join(";");
+			const filter = barcodes.map((b) => `barcode=${b}`).join(";");
 			const response = await this.request("GET", `/entity/assortment?filter=${filter}`);
 			return response.data.rows || [];
 		} catch (error) {
 			log(`Ошибка массового поиска товаров: ${error.message}`, "ERROR");
 			return [];
 		}
-	},	
+	},
 	async getCountry(name) {
 		if (!name) return null;
 		try {
@@ -84,9 +82,18 @@ const msClient = {
 			log(`Ошибка при поиске контрагента ${email}: ${e.message}`, "ERROR");
 			return null;
 		}
-	},	
-	async ensureAttribute(name, type) {
+	},
+	async findOrderByExternalCode(externalCode) {
+		if (!externalCode) return null;
 		try {
+			const response = await this.request("GET", `/entity/customerorder?filter=externalCode=${externalCode}`);
+			return response.data.rows && response.data.rows.length > 0 ? response.data.rows[0] : null;
+		} catch (error) {
+			log(`Ошибка при поиске заказа по externalCode ${externalCode}: ${error.message}`, "ERROR");
+			return null;
+		}
+	},
+	async ensureAttribute(name, type) {		try {
 			const metadata = await this.request("GET", "/entity/product/metadata/attributes");
 			const existing = metadata.data.rows.find((attr) => attr.name === name);
 			if (existing) return existing.meta;
@@ -115,7 +122,7 @@ const msClient = {
 
 		try {
 			const response = await axios.get(fullUrl, { responseType: "arraybuffer" });
-			
+
 			// Проверка на SVG (МойСклад поддерживает только растровые форматы: JPG, PNG, GIF)
 			const contentStart = response.data.slice(0, 100).toString().toLowerCase();
 			if (contentStart.includes("<svg") || fullUrl.toLowerCase().includes(".svg")) {
@@ -126,7 +133,8 @@ const msClient = {
 			const base64 = Buffer.from(response.data, "binary").toString("base64");
 			const filename = path.basename(new URL(fullUrl).pathname.split("?")[0]) || "image.jpg";
 			return { filename, content: base64 };
-		} catch (e) {			log(`Ошибка при загрузке изображения ${fullUrl}: ${e.message}`, "WARN");
+		} catch (e) {
+			log(`Ошибка при загрузке изображения ${fullUrl}: ${e.message}`, "WARN");
 			return null;
 		}
 	},
@@ -141,7 +149,8 @@ const msClient = {
 		const idsFilter = uniqueProductIds.join(";");
 		const response = await this.request("GET", `/entity/assortment?filter=id=${idsFilter}&expand=country`);
 		return response.data.rows || [];
-	},	calculateAvailableStock(product) {
+	},
+	calculateAvailableStock(product) {
 		// Доступный остаток = Остаток - Резерв
 		return Math.max(0, (product.stock || 0) - (product.reserve || 0));
 	},

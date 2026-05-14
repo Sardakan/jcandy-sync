@@ -26,9 +26,9 @@ const syncProcessor = {
 			log(`[PROCESSOR] Ошибка: пустые данные в задаче ${task.entity}`, "ERROR");
 			return;
 		}
-		const entityId = data.id || data.barcode || data.orderNumber || data.email || 'no-id';
+		const entityId = data.id || data.barcode || data.orderNumber || data.email || "no-id";
 		log(`[PROCESSOR] Обработка ${task.entity}: ${entityId}`);
-		
+
 		// 2. Распределение по методам
 		switch (task.entity) {
 			case "product":
@@ -60,7 +60,7 @@ const syncProcessor = {
 
 		// 2. Формируем строку адреса
 		let addressStr = siteData.address || siteData.deliveryAddress || user.address;
-		if (addressStr && typeof addressStr === 'object') {
+		if (addressStr && typeof addressStr === "object") {
 			const parts = [addressStr.zip, addressStr.city, addressStr.street].filter(Boolean);
 			addressStr = parts.join(", ");
 		}
@@ -73,12 +73,10 @@ const syncProcessor = {
 			email: email,
 			phone: user.phone || siteData.phone || siteData.customerPhone || undefined,
 			actualAddress: addressStr || undefined,
-			description: siteData.notes || siteData.comment || user.notes || undefined,
-			code: user.id || user.externalId || undefined,
-			externalId: user.externalId || user.id || undefined,
-		};
-
-		// Удаляем пустые поля, чтобы не затирать данные в МС
+			// Поле description исключено, чтобы не затирать существующие комментарии в МС
+			code: String(user.id || ""),			
+			externalId: String(user.externalId || ""),
+		};		// Удаляем пустые поля, чтобы не затирать данные в МС
 		if (!msCounterparty.phone) delete msCounterparty.phone;
 		if (!msCounterparty.actualAddress) delete msCounterparty.actualAddress;
 		if (!msCounterparty.description) delete msCounterparty.description;
@@ -154,8 +152,22 @@ const syncProcessor = {
 					},
 				},
 			});
+		} else {
+			// Если платной доставки нет — вставляем самовывоз (закомментировано до создания услуги в МС)
+			/*
+			positions.push({
+				quantity: 1,
+				price: 0,
+				assortment: {
+					meta: {
+						href: CONFIG.SERVICE_PICKUP_HREF,
+						type: "service",
+						mediaType: "application/json",
+					},
+				},
+			});
+			*/
 		}
-
 		// 4. Форматирование даты
 		let formattedMoment = undefined;
 		const rawDate = order.createdAt || order.date;
@@ -193,11 +205,23 @@ const syncProcessor = {
 		};
 
 		try {
-			const response = await msClient.request("POST", "/entity/customerorder", msOrder);
-			log(`[PROCESSOR] Заказ успешно создан. ID: ${response.data.id}`);
-			return response.data;
-		} catch (err) {
-			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
+			// Проверяем, существует ли заказ в МС
+			const existingOrder = await msClient.findOrderByExternalCode(msOrder.externalCode);
+
+			if (existingOrder) {
+				// Если заказ есть — обновляем только статус
+				await msClient.request("PUT", `/entity/customerorder/${existingOrder.id}`, {
+					state: msOrder.state
+				});
+				log(`[PROCESSOR] Статус заказа ${msOrder.externalCode} обновлен в МС`);
+				return existingOrder;
+			} else {
+				// Если заказа нет — создаем новый
+				const response = await msClient.request("POST", "/entity/customerorder", msOrder);
+				log(`[PROCESSOR] Заказ успешно создан. ID: ${response.data.id}`);
+				return response.data;
+			}
+		} catch (err) {			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
 			log(`[PROCESSOR] Ошибка при создании заказа: ${errorDetail}`, "ERROR");
 			throw err;
 		}
@@ -207,7 +231,7 @@ const syncProcessor = {
 	 * Вспомогательный метод для маппинга данных сайта в формат МойСклад
 	 */
 	async mapToMsProduct(siteData) {
-		const data = siteData.product || siteData.data || siteData;
+		const data = siteData.data || siteData.product || siteData;
 		const countryData = data.country ? await msClient.getCountry(data.country) : null;
 
 		const attributesConfig = [
@@ -223,14 +247,26 @@ const syncProcessor = {
 			{ name: "kcal", type: "double", value: data.nutrition?.kcal },
 			{ name: "Тэги", type: "text", value: data.tags?.length > 0 ? data.tags.join(", ") : null },
 			{ name: "Бейджи", type: "text", value: data.badges?.length > 0 ? data.badges.join(", ") : null },
+			{ name: "unitPriceText", type: "string", value: data.unitPriceText },
+			{ name: "deliveryType", type: "string", value: data.deliveryType },
+			{ name: "isDefault", type: "boolean", value: data.isDefault },
 		];
+
+		// Добавляем динамические атрибуты из rawAttributes
+		if (Array.isArray(data.rawAttributes)) {
+			data.rawAttributes.forEach(a => {
+				if (a.value !== null && a.value !== undefined && a.value !== "") {
+					attributesConfig.push({ name: a.name, type: "string", value: a.value });
+				}
+			});
+		}
 
 		const msAttributes = [];
 		for (const attr of attributesConfig) {
 			if (attr.value === null || attr.value === undefined || attr.value === "") continue;
 			const meta = await msClient.ensureAttribute(attr.name, attr.type);
 			if (meta) {
-				const finalValue = (attr.type === "double" || attr.type === "number") ? Number(attr.value) : attr.value;
+				const finalValue = attr.type === "double" || attr.type === "number" ? Number(attr.value) : attr.value;
 				msAttributes.push({ meta, value: finalValue });
 			}
 		}
@@ -238,7 +274,7 @@ const syncProcessor = {
 		const msProduct = {
 			name: data.title || data.name,
 			externalId: String(data.externalId || data.id || ""),
-			code: data.sku || undefined,
+			code: String(data.externalId || data.sku || ""),
 			article: data.slug || undefined,
 			description: data.description || "",
 			attributes: msAttributes,
@@ -253,7 +289,13 @@ const syncProcessor = {
 		if (priceCurrent) {
 			salePrices.push({
 				value: Number(priceCurrent) * 100,
-				priceType: { meta: { href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c98c9c6d-4619-11f1-0a80-1ba10025a76e`, type: "pricetype", mediaType: "application/json" } }
+				priceType: {
+					meta: {
+						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c98c9c6d-4619-11f1-0a80-1ba10025a76e`,
+						type: "pricetype",
+						mediaType: "application/json",
+					},
+				},
 			});
 		}
 		if (salePrices.length > 0) msProduct.salePrices = salePrices;
@@ -276,7 +318,7 @@ const syncProcessor = {
 		log(`[PROCESSOR] Синхронизация товара: ${data.title || data.name} (${data.barcode})`);
 
 		const existingProduct = await msClient.findProductByBarcode(data.barcode);
-		
+
 		try {
 			if (existingProduct) {
 				log(`[PROCESSOR] Пропуск: Товар "${data.title || data.name}" (${data.barcode}) уже есть в МС.`);
@@ -299,13 +341,13 @@ const syncProcessor = {
 	async massCreateProducts(items) {
 		if (!items || items.length === 0) return;
 
-		const barcodes = items.map(i => i.barcode).filter(Boolean);
+		const barcodes = items.map((i) => i.barcode).filter(Boolean);
 		const existingRows = await msClient.findProductsByBarcodes(barcodes);
-		
+
 		const existingBarcodes = new Set();
-		existingRows.forEach(row => {
+		existingRows.forEach((row) => {
 			if (row.barcodes) {
-				row.barcodes.forEach(b => existingBarcodes.add(b.code128 || b.ean13));
+				row.barcodes.forEach((b) => existingBarcodes.add(b.code128 || b.ean13));
 			}
 		});
 
@@ -376,7 +418,7 @@ const syncProcessor = {
 	},
 
 	/**
-	 * Полная синхронизация данных товара из МС на сайт 
+	 * Полная синхронизация данных товара из МС на сайт
 	 */
 	async syncProductToSite(data) {
 		const barcode = data.barcodes ? data.barcodes[0].code128 || data.barcodes[0].ean13 : null;
@@ -388,8 +430,18 @@ const syncProcessor = {
 		};
 
 		const handledAttrNames = [
-			"Брэнд", "Опубликован", "packageWeight", "packLengthMm", "packWidthMm", 
-			"packHeightMm", "protein", "fat", "carbs", "kcal", "Тэги", "Бейджи"
+			"Брэнд",
+			"Опубликован",
+			"packageWeight",
+			"packLengthMm",
+			"packWidthMm",
+			"packHeightMm",
+			"protein",
+			"fat",
+			"carbs",
+			"kcal",
+			"Тэги",
+			"Бейджи",
 		];
 
 		const rawAttributes = [];
@@ -434,8 +486,16 @@ const syncProcessor = {
 				kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
 			},
 
-			tags: getAttr("Тэги") ? getAttr("Тэги").split(",").map((t) => t.trim()) : [],
-			badges: getAttr("Бейджи") ? getAttr("Бейджи").split(",").map((t) => t.trim()) : [],
+			tags: getAttr("Тэги")
+				? getAttr("Тэги")
+						.split(",")
+						.map((t) => t.trim())
+				: [],
+			badges: getAttr("Бейджи")
+				? getAttr("Бейджи")
+						.split(",")
+						.map((t) => t.trim())
+				: [],
 			rawAttributes: rawAttributes,
 			updatedAt: new Date().toISOString(),
 		};

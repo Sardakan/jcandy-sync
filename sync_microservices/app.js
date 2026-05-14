@@ -13,7 +13,7 @@ app.use(express.json());
 const TEST_DATA = {
 	products: ["MS-TEST-0001", "MS-TEST-0002", "MS-TEST-0003", "MS-TEST-0004"],
 	orders: ["TNJVUUBS", "LG7B6JX3", "QK9AHDTS", "SCWDVN6P"],
-	customers: ["moysklad-customer-test+01@jcandy.local", "moysklad-customer-test+02@jcandy.local"]
+	customers: ["moysklad-customer-test+01@jcandy.local", "moysklad-customer-test+02@jcandy.local"],
 };
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
@@ -64,12 +64,17 @@ const runMigration = async (entity, testIds, endpointBuilder, res) => {
 	for (const id of testIds) {
 		try {
 			const json = await siteRequest("GET", endpointBuilder(id));
-			
+
 			// Распаковка данных (аналог extract_data.js)
-			const data = (json && json.data && !Array.isArray(json.data)) ? json.data :
-			             (json && json.rows && Array.isArray(json.rows)) ? json.rows[0] :
-			             (Array.isArray(json)) ? json[0] : json;
-			
+			const data =
+				json && json.data && !Array.isArray(json.data)
+					? json.data
+					: json && json.rows && Array.isArray(json.rows)
+						? json.rows[0]
+						: Array.isArray(json)
+							? json[0]
+							: json;
+
 			// Проверка валидности полученного объекта
 			const hasRequiredFields = data && (data.id || data.barcode || data.orderNumber || data.email || data.customerEmail);
 			const isOk = json && json.ok !== false && !data?.error;
@@ -90,7 +95,7 @@ const runMigration = async (entity, testIds, endpointBuilder, res) => {
 	res.json({
 		message: `Миграция ${entity} завершена`,
 		stats: { total: testIds.length, success: results.success.length, failed: results.failed.length },
-		details: { added: results.success, not_found: results.failed }
+		details: { added: results.success, not_found: results.failed },
 	});
 };
 
@@ -152,17 +157,17 @@ async function handleWebhook(req, res) {
 
 					const statusEntry = Object.entries(CONFIG.ORDER_STATES).find(([_, href]) => href === data.state?.meta?.href);
 					const statusName = statusEntry ? statusEntry[0] : "pending";
-				// Используем externalCode (ID сайта), так как именно по нему сайт ищет заказ
-				const orderId = data.externalCode;
-				if (!orderId) {
-					log(`[MS WEBHOOK] Пропуск: в заказе МС отсутствует externalCode (ID сайта)`, "WARN");
-					continue;
-				}
+					// Используем externalCode (ID сайта), так как именно по нему сайт ищет заказ
+					const orderId = data.externalCode;
+					if (!orderId) {
+						log(`[MS WEBHOOK] Пропуск: в заказе МС отсутствует externalCode (ID сайта)`, "WARN");
+						continue;
+					}
 
-				const updatePayload = {
-					status: statusName,
-					updatedAt: new Date().toISOString(),
-				};
+					const updatePayload = {
+						status: statusName,
+						updatedAt: new Date().toISOString(),
+					};
 
 					log(`[TO SITE] Обновление статуса заказа ${orderId} -> ${statusName}`);
 					await siteRequest("PATCH", `/orders/${orderId}`, updatePayload);
@@ -170,7 +175,8 @@ async function handleWebhook(req, res) {
 					log(`Ошибка при обновлении статуса заказа: ${e.message}`, "ERROR");
 				}
 			}
-		}		res.status(200).send("OK");
+		}
+		res.status(200).send("OK");
 	} catch (err) {
 		log(`Ошибка при обработке вебхука: ${err.message}`, "ERROR");
 		res.status(500).send("Error");
@@ -218,14 +224,11 @@ app.get("/api/v1/external/counterparties/:email", async (req, res) => {
 
 // --- РОУТЫ: ADMIN & MIGRATION ---
 
-app.post("/api/v1/admin/migrate", (req, res) => 
-	runMigration("product", TEST_DATA.products, (id) => `/products/${id}`, res));
+app.post("/api/v1/admin/migrate", (req, res) => runMigration("product", TEST_DATA.products, (id) => `/products/${id}`, res));
 
-app.post("/api/v1/admin/migrate-orders", (req, res) => 
-	runMigration("order", TEST_DATA.orders, (id) => `/orders/${id}`, res));
+app.post("/api/v1/admin/migrate-orders", (req, res) => runMigration("order", TEST_DATA.orders, (id) => `/orders/${id}`, res));
 
-app.post("/api/v1/admin/migrate-counterparties", (req, res) => 
-	runMigration("counterparty", TEST_DATA.customers, (id) => `/customers/${id}`, res));
+app.post("/api/v1/admin/migrate-counterparties", (req, res) => runMigration("counterparty", TEST_DATA.customers, (id) => `/customers/${id}`, res));
 
 /**
  * Массовая миграция товаров с сайта (пагинация по 50)
@@ -239,7 +242,7 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 	try {
 		// 1. Получаем первую порцию данных и информацию о пагинации
 		const response = await siteRequest("GET", `/products?limit=${limit}&offset=${offset}`);
-		
+
 		// Извлекаем товары и общее количество
 		const items = response.data || (Array.isArray(response) ? response : []);
 		const total = response.pagination?.total || 0;
@@ -251,11 +254,11 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 		log(`[MIGRATION] Всего товаров на сайте: ${total}. Начинаем фоновую обработку.`);
 
 		// Отвечаем сразу, чтобы Render не оборвал соединение по таймауту
-		res.json({ 
-			message: "Миграция запущена в фоновом режиме", 
+		res.json({
+			message: "Миграция запущена в фоновом режиме",
 			total_to_process: total,
 			start_offset: offset,
-			batch_size: limit 
+			batch_size: limit,
 		});
 
 		// 2. Запускаем фоновый процесс
@@ -271,7 +274,8 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 				await syncProcessor.massCreateProducts(currentItems);
 				processedInThisRun += currentItems.length;
 
-				currentOffset += currentItems.length;				log(`[MIGRATION] Прогресс: ${currentOffset} / ${total}`);
+				currentOffset += currentItems.length;
+				log(`[MIGRATION] Прогресс: ${currentOffset} / ${total}`);
 
 				// Если достигли конца
 				if (currentOffset >= total) break;
@@ -286,17 +290,17 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 				}
 
 				// Пауза 300мс, чтобы не перегружать API сайта
-				await new Promise(resolve => setTimeout(resolve, 300));
+				await new Promise((resolve) => setTimeout(resolve, 300));
 			}
 			log(`[MIGRATION] Массовая миграция завершена. Всего обработано: ${processedInThisRun}`);
 		})();
-
 	} catch (e) {
 		log(`[MIGRATION] Ошибка при запуске миграции: ${e.message}`, "ERROR");
 		if (!res.headersSent) res.status(500).json({ error: e.message });
 	}
 });
-app.post("/api/v1/admin/clear-queue", async (req, res) => {	queue.queue = [];
+app.post("/api/v1/admin/clear-queue", async (req, res) => {
+	queue.queue = [];
 	await queue.save();
 	log("Очередь задач очищена вручную");
 	res.json({ message: "Очередь очищена" });
