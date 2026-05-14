@@ -295,14 +295,13 @@ const syncProcessor = {
 
 		try {
 			if (existingProduct) {
-				await msClient.request("PUT", `/entity/product/${existingProduct.id}`, msProduct);
-				log(`[PROCESSOR] Товар обновлен: ${data.barcode}`);
+				log(`[PROCESSOR] Пропуск: Товар ${data.barcode} уже существует в МС. Изменения не внесены.`);
+				return;
 			} else {
 				await msClient.request("POST", "/entity/product", msProduct);
 				log(`[PROCESSOR] Товар создан: ${data.barcode}`);
 			}
-		} catch (err) {
-			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
+		} catch (err) {			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
 			log(`[PROCESSOR] Ошибка синхронизации товара ${data.barcode}: ${errorDetail}`, "ERROR");
 			throw err;
 		}
