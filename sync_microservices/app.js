@@ -264,38 +264,43 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 
 		// 2. Запускаем фоновый процесс
 		(async () => {
-			let currentOffset = offset;
-			let processedInThisRun = 0;
-			let currentItems = items;
+			try {
+				log(`[MIGRATION-BACKGROUND] Фоновый процесс запущен. Офсет: ${offset}`);
+				let currentOffset = offset;
+				let processedInThisRun = 0;
+				let currentItems = items;
 
-			while (currentItems.length > 0) {
-				log(`[MIGRATION] Массовая обработка пачки: offset=${currentOffset}, count=${currentItems.length}`);
+				while (currentItems.length > 0) {
+					log(`[MIGRATION] Массовая обработка пачки: offset=${currentOffset}, count=${currentItems.length}`);
 
-				// Используем новый метод массового создания вместо очереди
-				await syncProcessor.massCreateProducts(currentItems);
-				processedInThisRun += currentItems.length;
+					// Используем новый метод массового создания вместо очереди
+					await syncProcessor.massCreateProducts(currentItems);
+					processedInThisRun += currentItems.length;
 
-				currentOffset += currentItems.length;
-				log(`[MIGRATION] Прогресс: ${currentOffset} / ${total}`);
+					currentOffset += currentItems.length;
+					log(`[MIGRATION] Прогресс: ${currentOffset} / ${total}`);
 
-				// Если достигли конца
-				if (currentOffset >= total) break;
+					// Если достигли конца
+					if (currentOffset >= total) break;
 
-				// Загружаем следующую пачку
-				try {
-					const nextResponse = await siteRequest("GET", `/products?limit=${limit}&offset=${currentOffset}`);
-					currentItems = nextResponse.data || (Array.isArray(nextResponse) ? nextResponse : []);
-				} catch (err) {
-					log(`[MIGRATION] Ошибка при загрузке пачки (offset ${currentOffset}): ${err.message}`, "ERROR");
-					break;
+					// Загружаем следующую пачку
+					try {
+						const nextResponse = await siteRequest("GET", `/products?limit=${limit}&offset=${currentOffset}`);
+						currentItems = nextResponse.data || (Array.isArray(nextResponse) ? nextResponse : []);
+					} catch (err) {
+						log(`[MIGRATION] Ошибка при загрузке пачки (offset ${currentOffset}): ${err.message}`, "ERROR");
+						break;
+					}
+
+					// Пауза 300мс, чтобы не перегружать API сайта
+					await new Promise((resolve) => setTimeout(resolve, 300));
 				}
-
-				// Пауза 300мс, чтобы не перегружать API сайта
-				await new Promise((resolve) => setTimeout(resolve, 300));
+				log(`[MIGRATION] Массовая миграция завершена. Всего обработано: ${processedInThisRun}`);
+			} catch (err) {
+				log(`[MIGRATION-CRITICAL] Ошибка в фоновом процессе: ${err.message}`, "ERROR");
+				console.error(err);
 			}
-			log(`[MIGRATION] Массовая миграция завершена. Всего обработано: ${processedInThisRun}`);
-		})();
-	} catch (e) {
+		})();	} catch (e) {
 		log(`[MIGRATION] Ошибка при запуске миграции: ${e.message}`, "ERROR");
 		if (!res.headersSent) res.status(500).json({ error: e.message });
 	}
