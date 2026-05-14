@@ -204,26 +204,16 @@ const syncProcessor = {
 	},
 
 	/**
-	 * Синхронизация товара
+	 * Вспомогательный метод для маппинга данных сайта в формат МойСклад
 	 */
-	async syncProduct(siteData) {
+	async mapToMsProduct(siteData) {
 		const data = siteData.product || siteData.data || siteData;
-
-		if (!data || (!data.barcode && !data.title)) {
-			log(`[PROCESSOR] Ошибка: Некорректные данные товара`, "ERROR");
-			return;
-		}
-
-		log(`[PROCESSOR] Синхронизация товара: ${data.title} (${data.barcode})`);
-
-		const existingProduct = await msClient.findProductByBarcode(data.barcode);
 		const countryData = data.country ? await msClient.getCountry(data.country) : null;
 
-		// 1. Подготовка атрибутов
 		const attributesConfig = [
 			{ name: "Брэнд", type: "string", value: data.brand },
 			{ name: "Опубликован", type: "boolean", value: data.isPublished },
-			{ name: "packageWeight", type: "double", value: data.packWeightG },
+			{ name: "packageWeight", type: "double", value: data.weights?.packageWeightG || data.packWeightG },
 			{ name: "packLengthMm", type: "double", value: data.attributes?.packLengthMm },
 			{ name: "packWidthMm", type: "double", value: data.attributes?.packWidthMm },
 			{ name: "packHeightMm", type: "double", value: data.attributes?.packHeightMm },
@@ -235,75 +225,108 @@ const syncProcessor = {
 			{ name: "Бейджи", type: "text", value: data.badges?.length > 0 ? data.badges.join(", ") : null },
 		];
 
-		// Добавляем динамические атрибуты
-		if (Array.isArray(data.rawAttributes)) {
-			data.rawAttributes.forEach(a => a.value && attributesConfig.push({ name: a.name, type: "string", value: a.value }));
-		}
-
 		const msAttributes = [];
 		for (const attr of attributesConfig) {
 			if (attr.value === null || attr.value === undefined || attr.value === "") continue;
 			const meta = await msClient.ensureAttribute(attr.name, attr.type);
 			if (meta) {
 				const finalValue = (attr.type === "double" || attr.type === "number") ? Number(attr.value) : attr.value;
-				if (typeof finalValue === "number" && isNaN(finalValue)) continue;
 				msAttributes.push({ meta, value: finalValue });
 			}
 		}
+
 		const msProduct = {
-			name: data.title,
+			name: data.title || data.name,
 			externalId: String(data.externalId || data.id || ""),
 			code: data.sku || undefined,
 			article: data.slug || undefined,
 			description: data.description || "",
 			attributes: msAttributes,
-			weight: data.weightG || undefined,
+			weight: (data.weights?.weightG || data.weightG || 0) / 1000,
 			volume: data.weights?.volumeMl || undefined,
 		};
+
 		if (data.barcode) msProduct.barcodes = [{ code128: data.barcode }];
 
-		// Цены
 		const salePrices = [];
 		const priceCurrent = data.priceCurrent ?? data.pricing?.priceCurrent;
-		const priceOld = data.priceOld ?? data.pricing?.priceOld;
-
-		if (priceCurrent !== undefined && priceCurrent !== null) {
+		if (priceCurrent) {
 			salePrices.push({
 				value: Number(priceCurrent) * 100,
 				priceType: { meta: { href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c98c9c6d-4619-11f1-0a80-1ba10025a76e`, type: "pricetype", mediaType: "application/json" } }
 			});
 		}
-		if (priceOld !== undefined && priceOld !== null) {
-			salePrices.push({
-				value: Number(priceOld) * 100,
-				priceType: { meta: { href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c25d77ef-46f0-11f1-0a80-143b0004ba6d`, type: "pricetype", mediaType: "application/json" } }
-			});
-		}
 		if (salePrices.length > 0) msProduct.salePrices = salePrices;
-		// Изображения
-		const imageUrls = data.imageUrls || (data.media?.images ? data.media.images.map(img => img.url) : []);
-		if (imageUrls.length > 0 && data.imageUpdated !== false) {
-			try {
-				const imageData = await msClient.downloadImageAsBase64(imageUrls[0]);
-				if (imageData) msProduct.images = [imageData];
-			} catch (e) {
-				log(`[PROCESSOR] Ошибка загрузки фото для ${data.barcode}: ${e.message}`, "WARN");
-			}
-		}
-
 		if (countryData) msProduct.country = { meta: countryData.meta };
 
+		return msProduct;
+	},
+
+	/**
+	 * Синхронизация товара (одиночная)
+	 */
+	async syncProduct(siteData) {
+		const data = siteData.product || siteData.data || siteData;
+
+		if (!data || (!data.barcode && !data.title)) {
+			log(`[PROCESSOR] Ошибка: Некорректные данные товара`, "ERROR");
+			return;
+		}
+
+		log(`[PROCESSOR] Синхронизация товара: ${data.title || data.name} (${data.barcode})`);
+
+		const existingProduct = await msClient.findProductByBarcode(data.barcode);
+		
 		try {
 			if (existingProduct) {
-				log(`[PROCESSOR] Пропуск: Товар ${data.barcode} уже существует в МС. Изменения не внесены.`);
+				log(`[PROCESSOR] Пропуск: Товар "${data.title || data.name}" (${data.barcode}) уже есть в МС.`);
 				return;
 			} else {
+				const msProduct = await this.mapToMsProduct(data);
 				await msClient.request("POST", "/entity/product", msProduct);
-				log(`[PROCESSOR] Товар создан: ${data.barcode}`);
+				log(`[PROCESSOR] Товар СОЗДАН: "${data.title || data.name}" (${data.barcode})`);
 			}
-		} catch (err) {			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
+		} catch (err) {
+			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
 			log(`[PROCESSOR] Ошибка синхронизации товара ${data.barcode}: ${errorDetail}`, "ERROR");
 			throw err;
+		}
+	},
+
+	/**
+	 * Массовое создание товаров (для миграции)
+	 */
+	async massCreateProducts(items) {
+		if (!items || items.length === 0) return;
+
+		const barcodes = items.map(i => i.barcode).filter(Boolean);
+		const existingRows = await msClient.findProductsByBarcodes(barcodes);
+		
+		const existingBarcodes = new Set();
+		existingRows.forEach(row => {
+			if (row.barcodes) {
+				row.barcodes.forEach(b => existingBarcodes.add(b.code128 || b.ean13));
+			}
+		});
+
+		const toCreate = [];
+		for (const item of items) {
+			if (existingBarcodes.has(item.barcode)) {
+				log(`[MASS] Пропуск: ${item.barcode} уже есть в МС`);
+				continue;
+			}
+			const msObj = await this.mapToMsProduct(item);
+			toCreate.push(msObj);
+		}
+
+		if (toCreate.length > 0) {
+			log(`[MASS] Отправка пачки в МС: ${toCreate.length} шт.`);
+			try {
+				await msClient.request("POST", "/entity/product", toCreate);
+				log(`[MASS] Пачка успешно создана (${toCreate.length} шт.)`);
+			} catch (e) {
+				log(`[MASS] Ошибка при создании пачки: ${e.message}`, "ERROR");
+			}
 		}
 	},
 

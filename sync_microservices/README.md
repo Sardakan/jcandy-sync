@@ -49,6 +49,8 @@
 * `POST /api/v1/external/counterparties` — Добавить контрагента в очередь
 
 ### 2. Массовая миграция (Тестовые данные)
+* ` POST https://jcandy-sync.onrender.com/api/v1/admin/mass-migrate-products`
+
 Запрашивает список предопределенных ID с сайта и ставит их в очередь.
 * `POST https://jcandy-sync.onrender.com/api/v1/admin/migrate` — Миграция тестовых товаров
 * `POST https://jcandy-sync.onrender.com/api/v1/admin/migrate-orders` — Миграция тестовых заказов

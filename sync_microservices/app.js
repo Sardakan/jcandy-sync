@@ -265,15 +265,13 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 			let currentItems = items;
 
 			while (currentItems.length > 0) {
-				log(`[MIGRATION] Обработка пачки: offset=${currentOffset}, count=${currentItems.length}`);
+				log(`[MIGRATION] Массовая обработка пачки: offset=${currentOffset}, count=${currentItems.length}`);
 
-				for (const item of currentItems) {
-					await queue.add("product", item);
-					processedInThisRun++;
-				}
+				// Используем новый метод массового создания вместо очереди
+				await syncProcessor.massCreateProducts(currentItems);
+				processedInThisRun += currentItems.length;
 
-				currentOffset += currentItems.length;
-				log(`[MIGRATION] Прогресс: ${currentOffset} / ${total}`);
+				currentOffset += currentItems.length;				log(`[MIGRATION] Прогресс: ${currentOffset} / ${total}`);
 
 				// Если достигли конца
 				if (currentOffset >= total) break;

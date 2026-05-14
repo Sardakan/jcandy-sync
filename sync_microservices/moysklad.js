@@ -53,6 +53,17 @@ const msClient = {
 			return null;
 		}
 	},
+	async findProductsByBarcodes(barcodes) {
+		if (!barcodes || barcodes.length === 0) return [];
+		try {
+			const filter = barcodes.map(b => `barcode=${b}`).join(";");
+			const response = await this.request("GET", `/entity/assortment?filter=${filter}`);
+			return response.data.rows || [];
+		} catch (error) {
+			log(`Ошибка массового поиска товаров: ${error.message}`, "ERROR");
+			return [];
+		}
+	},	
 	async getCountry(name) {
 		if (!name) return null;
 		try {
