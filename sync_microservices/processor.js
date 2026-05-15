@@ -234,6 +234,8 @@ const syncProcessor = {
 		const data = siteData.data || siteData.product || siteData;
 		const countryData = data.country ? await msClient.getCountry(data.country) : null;
 
+		const weight = (data.weights?.weightG || data.weightG || 0) / 1000,
+
 		const attributesConfig = [
 			{ name: "Брэнд", type: "string", value: data.brand },
 			{ name: "Опубликован", type: "boolean", value: data.isPublished },
@@ -250,6 +252,11 @@ const syncProcessor = {
 			{ name: "unitPriceText", type: "string", value: data.unitPriceText },
 			{ name: "deliveryType", type: "string", value: data.deliveryType },
 			{ name: "isDefault", type: "boolean", value: data.isDefault },
+			{ name: "weight", type: "string", value: weight},
+			{ name: "volume", type: "string", value: data.weights?.volumeMl || undefined },
+			{ name: "variantKey", type: "string", value: data.variantKey },
+			{ name: "variantValue", type: "string", value: data.variantValue },
+
 		];
 
 		// Добавляем динамические атрибуты из rawAttributes
@@ -277,11 +284,7 @@ const syncProcessor = {
 			code: String(data.id|| ""),
 			article: data.slug || undefined,
 			description: data.description || "",
-			attributes: msAttributes,
-			weight: (data.weights?.weightG || data.weightG || 0) / 1000,
-			volume: data.weights?.volumeMl || undefined,
-			variantKey: data.variantKey,
-			variantValue: data.variantValue
+			//attributes: msAttributes,
 		};
 
 		if (data.barcode) msProduct.barcodes = [{ code128: data.barcode }];
