@@ -252,8 +252,8 @@ const syncProcessor = {
 			{ name: "unitPriceText", type: "string", value: data.unitPriceText },
 			{ name: "deliveryType", type: "string", value: data.deliveryType },
 			{ name: "isDefault", type: "boolean", value: data.isDefault },
-			{ name: "weight", type: "string", value: weight},
-			{ name: "volume", type: "string", value: data.weights?.volumeMl || undefined },
+			{ name: "weight", type: "double", value: weight},
+			{ name: "volume", type: "double", value: data.weights?.volumeMl || undefined },
 			{ name: "variantKey", type: "string", value: data.variantKey },
 			{ name: "variantValue", type: "string", value: data.variantValue },
 
