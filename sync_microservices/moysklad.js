@@ -56,15 +56,18 @@ const msClient = {
 		if (validBarcodes.length === 0) return [];
 
 		try {
-			const filter = validBarcodes.map((b) => `barcode=${String(b).trim()}`).join(";");
-			const response = await this.request("GET", `/entity/assortment?filter=${encodeURIComponent(filter)}`);
+			const filterParts = validBarcodes.map((b) => `barcode=${String(b).trim()}`);
+			const filterString = filterParts.join(";");
+			
+			log(`[DEBUG] Фильтр для МС: ${filterString}`); // Раскомментируйте для глубокой отладки
+			
+			const response = await this.request("GET", `/entity/assortment?filter=${encodeURIComponent(filterString)}`);
 			return response.data.rows || [];
 		} catch (error) {
 			log(`Ошибка массового поиска товаров: ${error.message}`, "ERROR");
 			return [];
 		}
-	},
-	async getCountry(name) {
+	},	async getCountry(name) {
 		if (!name) return null;
 		try {
 			const response = await this.request("GET", `/entity/country?filter=name=${encodeURIComponent(name)}`);
