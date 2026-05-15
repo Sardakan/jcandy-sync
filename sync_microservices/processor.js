@@ -280,11 +280,11 @@ const syncProcessor = {
 
 		const msProduct = {
 			name: data.title || data.name,
-			externalId: String(data.externalId || ""),
+			externalCode: String(data.externalId || ""),
 			code: String(data.id|| ""),
 			article: data.slug || undefined,
 			description: data.description || "",
-			//attributes: msAttributes,
+			attributes: msAttributes,
 		};
 
 		if (data.barcode) msProduct.barcodes = [{ code128: data.barcode }];
@@ -508,11 +508,11 @@ const syncProcessor = {
 				packageWeightG: getAttr("packageWeight") ? Number(getAttr("packageWeight")) : null,
 			},
 
-			attributes: {
+			/* attributes: {
 				packLengthMm: getAttr("packLengthMm") ? Number(getAttr("packLengthMm")) : null,
 				packWidthMm: getAttr("packWidthMm") ? Number(getAttr("packWidthMm")) : null,
 				packHeightMm: getAttr("packHeightMm") ? Number(getAttr("packHeightMm")) : null,
-			},
+			}, */
 
 			nutrition: {
 				protein: getAttr("protein") ? Number(getAttr("protein")) : null,
