@@ -234,7 +234,7 @@ const syncProcessor = {
 		const data = siteData.data || siteData.product || siteData;
 		const countryData = data.country ? await msClient.getCountry(data.country) : null;
 
-		const weight = (data.weights?.weightG || data.weightG || 0) / 1000,
+		const weight = ((data.weights?.weightG || data.weightG || 0) / 1000);
 
 		const attributesConfig = [
 			{ name: "Брэнд", type: "string", value: data.brand },
