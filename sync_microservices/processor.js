@@ -237,7 +237,7 @@ const syncProcessor = {
 		const attributesConfig = [
 			{ name: "Брэнд", type: "string", value: data.brand },
 			{ name: "Опубликован", type: "boolean", value: data.isPublished },
-			{ name: "packageWeight", type: "double", value: data.weights?.packageWeightG || data.packWeightG },
+			{ name: "packageWeightG", type: "double", value: data.weights?.packageWeightG || data.packWeightG },
 			{ name: "packLengthMm", type: "double", value: data.attributes?.packLengthMm },
 			{ name: "packWidthMm", type: "double", value: data.attributes?.packWidthMm },
 			{ name: "packHeightMm", type: "double", value: data.attributes?.packHeightMm },
@@ -273,13 +273,15 @@ const syncProcessor = {
 
 		const msProduct = {
 			name: data.title || data.name,
-			externalId: String(data.externalId || data.id || ""),
-			code: String(data.externalId || data.sku || ""),
+			externalId: String(data.externalId || ""),
+			code: String(data.id|| ""),
 			article: data.slug || undefined,
 			description: data.description || "",
 			attributes: msAttributes,
 			weight: (data.weights?.weightG || data.weightG || 0) / 1000,
 			volume: data.weights?.volumeMl || undefined,
+			variantKey: data.variantKey,
+			variantValue: data.variantValue
 		};
 
 		if (data.barcode) msProduct.barcodes = [{ code128: data.barcode }];
@@ -298,8 +300,35 @@ const syncProcessor = {
 				},
 			});
 		}
+		if (data.priceOld || (data.pricing && data.pricing.priceOld)) {
+			const priceOld = data.priceOld || data.pricing.priceOld;
+			salePrices.push({
+				value: priceOld * 100,
+				priceType: {
+					meta: {
+						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c25d77ef-46f0-11f1-0a80-143b0004ba6d`,
+						type: "pricetype",
+						mediaType: "application/json",
+					},
+				},
+			});
+		}
 		if (salePrices.length > 0) msProduct.salePrices = salePrices;
 		if (countryData) msProduct.country = { meta: countryData.meta };
+		// Изображения
+		const imageUrls = data.imageUrls || (data.media && data.media.images ? data.media.images.map((img) => img.url) : []);
+
+		let shouldUpdateImage = true;
+
+		if (imageUrls.length > 0 && shouldUpdateImage) {
+			try {
+				const imageData = await msClient.downloadImageAsBase64(imageUrls[0]);
+				if (imageData) msProduct.images = [imageData];
+			} catch (imgErr) {
+				console.error(`Ошибка при загрузке изображения для товара ${data.barcode || data.title}:`, imgErr.message);
+				log(`Ошибка при загрузке изображения для товара ${data.barcode || data.title}: ${imgErr.message}`, "WARN");
+			}
+		}
 
 		return msProduct;
 	},
