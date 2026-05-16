@@ -119,13 +119,16 @@ async function handleWebhook(req, res) {
 
 		// 1. Массовая обработка обновлений карточек товаров
 		if (productUpdates.length > 0) {
-			log(`[MS WEBHOOK] Массовое обновление карточек товаров (${productUpdates.length} шт.)`);
+			log(`[MS WEBHOOK] Начинаю загрузку данных для ${productUpdates.length} товаров из МС...`);
 			const productIds = productUpdates.map(p => p.id);
 			msClient.loadProductsFromAssortment(productIds)
-				.then(products => syncProcessor.syncProductsToSiteBulk(products, productUpdates))
-				.catch(e => log(`Ошибка массовой синхронизации товаров: ${e.message}`, "ERROR"));
+				.then(products => {
+					log(`[MS WEBHOOK] Данные из МС получены (${products.length} шт.), передаю в процессор...`);
+					return syncProcessor.syncProductsToSiteBulk(products, productUpdates);
+				})
+				.then(() => log(`[MS WEBHOOK] Массовая синхронизация успешно завершена`))
+				.catch(e => log(`[MS WEBHOOK] КРИТИЧЕСКАЯ ОШИБКА массовой синхронизации: ${e.message}`, "ERROR"));
 		}
-
 		for (const event of events) {
 			const type = event.meta.type;
 
