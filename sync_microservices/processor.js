@@ -418,17 +418,19 @@ const syncProcessor = {
 					return {
 						barcode: barcode,
 						stockQty: msClient.calculateAvailableStock(product),
-					};				})
+					};
+				})
 				.filter(Boolean);
 
 			// 5. Отправляем на сайт одним запросом
 			if (stockUpdates.length > 0) {
-				log(`[TO SITE] Массовое обновление остатков (${stockUpdates.length} поз.)`);
+				log(`[TO SITE] Массовое обновление остатков (${stockUpdates.length} поз.): ${JSON.stringify(stockUpdates)}`);
 				await siteRequest("PATCH", "/products/bulk", stockUpdates);
-			}		} catch (e) {
+			}
+		} catch (e) {
 			log(`[PROCESSOR] Ошибка при синхронизации остатков документа: ${e.message}`, "ERROR");
 		}
-	},
+	},	
 
 	/**
 	 * Полная синхронизация данных товара из МС на сайт
