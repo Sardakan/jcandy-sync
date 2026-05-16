@@ -333,11 +333,12 @@ const syncProcessor = {
 		const existingProduct = await msClient.findProductByBarcode(data.barcode);
 
 		try {
+			const msProduct = await this.mapToMsProduct(data);
+			
 			if (existingProduct) {
-				log(`[PROCESSOR] Пропуск: Товар "${data.title || data.name}" (${data.barcode}) уже есть в МС.`);
-				return;
+				await msClient.request("PUT", `/entity/product/${existingProduct.id}`, msProduct);
+				log(`[PROCESSOR] Товар ОБНОВЛЕН: "${data.title || data.name}" (${data.barcode})`);
 			} else {
-				const msProduct = await this.mapToMsProduct(data);
 				await msClient.request("POST", "/entity/product", msProduct);
 				log(`[PROCESSOR] Товар СОЗДАН: "${data.title || data.name}" (${data.barcode})`);
 			}
@@ -347,7 +348,6 @@ const syncProcessor = {
 			throw err;
 		}
 	},
-
 	/**
 	 * Массовое создание товаров (для миграции)
 	 */
@@ -417,18 +417,15 @@ const syncProcessor = {
 
 					return {
 						barcode: barcode,
-						stock: msClient.calculateAvailableStock(product),
-						country: product.country?.name || undefined,
-					};
-				})
+						stockQty: msClient.calculateAvailableStock(product),
+					};				})
 				.filter(Boolean);
 
 			// 5. Отправляем на сайт одним запросом
 			if (stockUpdates.length > 0) {
 				log(`[TO SITE] Массовое обновление остатков (${stockUpdates.length} поз.)`);
-				await siteRequest("PATCH", "/products/bulk", { stocks: stockUpdates });
-			}
-		} catch (e) {
+				await siteRequest("PATCH", "/products/bulk", stockUpdates);
+			}		} catch (e) {
 			log(`[PROCESSOR] Ошибка при синхронизации остатков документа: ${e.message}`, "ERROR");
 		}
 	},
@@ -486,7 +483,7 @@ const syncProcessor = {
 			description: data.description || "",
 			brand: getAttr("brand"),
 			isPublished: String(getAttr("isPublished")) === "true",
-			stock: msClient.calculateAvailableStock(data),
+			stockQty: msClient.calculateAvailableStock(data),
 			unitPriceText: getAttr("unitPriceText"),
 			deliveryType: getAttr("deliveryType"),
 			isDefault: String(getAttr("isDefault")) === "true",
