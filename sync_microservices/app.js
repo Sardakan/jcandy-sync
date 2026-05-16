@@ -108,12 +108,26 @@ async function handleWebhook(req, res) {
 
 	try {
 		const events = req.body.events || [];
+		
+		// Группируем события по типам для массовой обработки
+		const productUpdateHrefs = events
+			.filter(e => e.meta.type === "product" && e.action === "UPDATE")
+			.map(e => e.meta.href);
+
+		// 1. Массовая обработка обновлений карточек товаров
+		if (productUpdateHrefs.length > 0) {
+			log(`[MS WEBHOOK] Массовое обновление карточек товаров (${productUpdateHrefs.length} шт.)`);
+			const productIds = productUpdateHrefs.map(href => href.split("/").pop());
+			msClient.loadProductsFromAssortment(productIds)
+				.then(products => syncProcessor.syncProductsToSiteBulk(products))
+				.catch(e => log(`Ошибка массовой синхронизации товаров: ${e.message}`, "ERROR"));
+		}
+
 		for (const event of events) {
 			const type = event.meta.type;
 
-			// 1. Обработка остатков (только документы)
-			if (["customerorder", "supply", "demand"].includes(type)) {
-				log(`[MS WEBHOOK] Изменение остатков в документе ${type}`);
+			// 2. Обработка остатков (только документы)
+			if (["customerorder", "supply", "demand"].includes(type)) {				log(`[MS WEBHOOK] Изменение остатков в документе ${type}`);
 				try {
 					const response = await msClient.request("GET", event.meta.href.replace(CONFIG.MS_API_BASE, ""));
 					const data = response.data;

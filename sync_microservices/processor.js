@@ -433,6 +433,78 @@ const syncProcessor = {
 	},	
 
 	/**
+	 * Массовая синхронизация полных данных товаров из МС на сайт
+	 */
+	async syncProductsToSiteBulk(msProducts) {
+		if (!msProducts || msProducts.length === 0) return;
+
+		const updates = msProducts.map((product) => {
+			const barcode = product.barcodes ? product.barcodes[0].code128 || product.barcodes[0].ean13 : null;
+			if (!barcode) return null;
+
+			const getAttr = (name) => {
+				const attr = product.attributes ? product.attributes.find((a) => a.name === name) : null;
+				return attr ? attr.value : null;
+			};
+
+			const handledAttrNames = [
+				"brand", "isPublished", "packageWeightG", "packWeightG", "protein", "fat", "carbs", "kcal",
+				"tags", "badges", "unitPriceText", "deliveryType", "isDefault", "weightG", "volumeMl", "variantKey", "variantValue"
+			];
+
+			const rawAttributes = [];
+			if (product.attributes) {
+				product.attributes.forEach((attr) => {
+					if (!handledAttrNames.includes(attr.name)) {
+						rawAttributes.push({ name: attr.name, value: attr.value });
+					}
+				});
+			}
+
+			return {
+				title: product.name,
+				barcode: barcode,
+				externalId: product.externalId,
+				sku: product.code,
+				slug: product.article,
+				country: product.country?.name || undefined,
+				priceCurrent: product.salePrices ? product.salePrices[0].value / 100 : null,
+				priceOld: product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null,
+				description: product.description || "",
+				brand: getAttr("brand"),
+				isPublished: String(getAttr("isPublished")) === "true",
+				stockQty: msClient.calculateAvailableStock(product),
+				unitPriceText: getAttr("unitPriceText"),
+				deliveryType: getAttr("deliveryType"),
+				isDefault: String(getAttr("isDefault")) === "true",
+				variantKey: getAttr("variantKey"),
+				variantValue: getAttr("variantValue"),
+				weights: {
+					weightG: product.weight || null,
+					volumeMl: product.volume || null,
+					packageWeightG: getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null,
+					packWeightG: getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null,
+				},
+				nutrition: {
+					protein: getAttr("protein") ? Number(getAttr("protein")) : null,
+					fat: getAttr("fat") ? Number(getAttr("fat")) : null,
+					carbs: getAttr("carbs") ? Number(getAttr("carbs")) : null,
+					kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
+				},
+				tags: getAttr("tags") ? getAttr("tags").split(",").map((t) => t.trim()) : [],
+				badges: getAttr("badges") ? getAttr("badges").split(",").map((t) => t.trim()) : [],
+				rawAttributes: rawAttributes,
+				updatedAt: new Date().toISOString(),
+			};
+		}).filter(Boolean);
+
+		if (updates.length > 0) {
+			log(`[TO SITE] Массовое обновление карточек товаров (${updates.length} поз.): ${JSON.stringify(updates)}`);
+			await siteRequest("PATCH", "/products/bulk", updates);
+		}
+	},
+
+	/**
 	 * Полная синхронизация данных товара из МС на сайт
 	 */
 	async syncProductToSite(data) {
@@ -510,10 +582,9 @@ const syncProcessor = {
 			rawAttributes: rawAttributes,
 			updatedAt: new Date().toISOString(),
 		};
-		log(`[TO SITE] Полное обновление товара ${barcode} (Страна: ${updatePayload.country})`);
+		log(`[TO SITE] Полное обновление товара ${barcode} (Страна: ${updatePayload.country}): ${JSON.stringify(updatePayload)}`);
 		await siteRequest("PATCH", `/products/${barcode}`, updatePayload);
 	},
-
 	/**
 	 * Синхронизация контрагента из МС на сайт
 	 */
