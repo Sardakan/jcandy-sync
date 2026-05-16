@@ -125,11 +125,13 @@ async function handleWebhook(req, res) {
 				.then(products => syncProcessor.syncProductsToSiteBulk(products, productUpdates))
 				.catch(e => log(`Ошибка массовой синхронизации товаров: ${e.message}`, "ERROR"));
 		}
+
 		for (const event of events) {
 			const type = event.meta.type;
 
 			// 2. Обработка остатков (только документы)
-			if (["customerorder", "supply", "demand"].includes(type)) {				log(`[MS WEBHOOK] Изменение остатков в документе ${type}`);
+			if (["customerorder", "supply", "demand"].includes(type)) {
+				log(`[MS WEBHOOK] Изменение остатков в документе ${type}`);
 				try {
 					const response = await msClient.request("GET", event.meta.href.replace(CONFIG.MS_API_BASE, ""));
 					const data = response.data;
@@ -137,17 +139,6 @@ async function handleWebhook(req, res) {
 					syncProcessor.syncStocksFromDocument(data).catch((e) => log(`Ошибка обновления остатков: ${e.message}`, "ERROR"));
 				} catch (e) {
 					log(`Ошибка при получении данных документа для остатков: ${e.message}`, "ERROR");
-				}
-			}
-
-			// 2. Обработка данных товара (страна, цены и т.д.)
-			if (type === "product" && event.action === "UPDATE") {
-				log(`[MS WEBHOOK] Обновление карточки товара`);
-				try {
-					const response = await msClient.request("GET", event.meta.href.replace(CONFIG.MS_API_BASE, "") + "?expand=country");
-					syncProcessor.syncProductToSite(response.data).catch((e) => log(`Ошибка синхронизации товара: ${e.message}`, "ERROR"));
-				} catch (e) {
-					log(`Ошибка при получении данных товара: ${e.message}`, "ERROR");
 				}
 			}
 
