@@ -110,19 +110,21 @@ async function handleWebhook(req, res) {
 		const events = req.body.events || [];
 		
 		// Группируем события по типам для массовой обработки
-		const productUpdateHrefs = events
+		const productUpdates = events
 			.filter(e => e.meta.type === "product" && e.action === "UPDATE")
-			.map(e => e.meta.href);
+			.map(e => ({
+				id: e.meta.href.split("/").pop(),
+				updatedFields: e.updatedFields || []
+			}));
 
 		// 1. Массовая обработка обновлений карточек товаров
-		if (productUpdateHrefs.length > 0) {
-			log(`[MS WEBHOOK] Массовое обновление карточек товаров (${productUpdateHrefs.length} шт.)`);
-			const productIds = productUpdateHrefs.map(href => href.split("/").pop());
+		if (productUpdates.length > 0) {
+			log(`[MS WEBHOOK] Массовое обновление карточек товаров (${productUpdates.length} шт.)`);
+			const productIds = productUpdates.map(p => p.id);
 			msClient.loadProductsFromAssortment(productIds)
-				.then(products => syncProcessor.syncProductsToSiteBulk(products))
+				.then(products => syncProcessor.syncProductsToSiteBulk(products, productUpdates))
 				.catch(e => log(`Ошибка массовой синхронизации товаров: ${e.message}`, "ERROR"));
 		}
-
 		for (const event of events) {
 			const type = event.meta.type;
 

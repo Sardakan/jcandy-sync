@@ -435,75 +435,122 @@ const syncProcessor = {
 	/**
 	 * Массовая синхронизация полных данных товаров из МС на сайт
 	 */
-	async syncProductsToSiteBulk(msProducts) {
+	async syncProductsToSiteBulk(msProducts, webhookUpdates = []) {
 		if (!msProducts || msProducts.length === 0) return;
 
 		const updates = msProducts.map((product) => {
 			const barcode = product.barcodes ? product.barcodes[0].code128 || product.barcodes[0].ean13 : null;
 			if (!barcode) return null;
 
+			// Находим информацию о том, какие поля изменились для этого товара
+			const updateInfo = webhookUpdates.find(u => u.id === product.id);
+			const updatedFields = updateInfo ? updateInfo.updatedFields : [];
+
 			const getAttr = (name) => {
 				const attr = product.attributes ? product.attributes.find((a) => a.name === name) : null;
 				return attr ? attr.value : null;
 			};
 
-			const handledAttrNames = [
-				"brand", "isPublished", "packageWeightG", "packWeightG", "protein", "fat", "carbs", "kcal",
-				"tags", "badges", "unitPriceText", "deliveryType", "isDefault", "weightG", "volumeMl", "variantKey", "variantValue"
-			];
+			// Базовый объект с обязательным ключом
+			const payload = { barcode: barcode };
 
-			const rawAttributes = [];
-			if (product.attributes) {
-				product.attributes.forEach((attr) => {
-					if (!handledAttrNames.includes(attr.name)) {
-						rawAttributes.push({ name: attr.name, value: attr.value });
+			// Маппинг полей МС -> Поля сайта
+			const fieldMap = {
+				"name": () => payload.title = product.name,
+				"article": () => payload.slug = product.article,
+				"code": () => payload.sku = product.code,
+				"description": () => payload.description = product.description,
+				"weight": () => {
+					if (!payload.weights) payload.weights = {};
+					payload.weights.weightG = product.weight ? product.weight * 1000 : null;
+				},
+				"volume": () => {
+					if (!payload.weights) payload.weights = {};
+					payload.weights.volumeMl = product.volume || null;
+				},
+				"country": () => payload.country = product.country?.name || undefined,
+				"salePrices": () => {
+					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
+					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
+				}
+			};
+
+			// Маппинг дополнительных атрибутов
+			const attrMap = {
+				"brand": "brand",
+				"isPublished": "isPublished",
+				"unitPriceText": "unitPriceText",
+				"deliveryType": "deliveryType",
+				"isDefault": "isDefault",
+				"variantKey": "variantKey",
+				"variantValue": "variantValue",
+				"packageWeightG": "packageWeightG",
+				"packWeightG": "packWeightG",
+				"protein": "protein",
+				"fat": "fat",
+				"carbs": "carbs",
+				"kcal": "kcal",
+				"tags": "tags",
+				"badges": "badges"
+			};
+
+			// Если есть информация об измененных полях, берем только их
+			if (updatedFields.length > 0) {
+				updatedFields.forEach(f => {
+					if (fieldMap[f]) fieldMap[f]();
+					// Проверка атрибутов (в МС они приходят как "название_атрибута (тип)") или просто "название"
+					Object.keys(attrMap).forEach(attrName => {
+						if (f.startsWith(attrName)) {
+							const val = getAttr(attrName);
+							if (attrName === "isPublished" || attrName === "isDefault") {
+								payload[attrMap[attrName]] = String(val) === "true";
+							} else if (["packageWeightG", "packWeightG", "protein", "fat", "carbs", "kcal"].includes(attrName)) {
+								if (!payload.weights) payload.weights = {};
+								if (!payload.nutrition) payload.nutrition = {};
+								
+								const numVal = val ? Number(val) : null;
+								if (attrName.includes("Weight")) payload.weights[attrMap[attrName]] = numVal;
+								else payload.nutrition[attrMap[attrName]] = numVal;
+							} else if (attrName === "tags" || attrName === "badges") {
+								payload[attrMap[attrName]] = val ? val.split(",").map(t => t.trim()) : [];
+							} else {
+								payload[attrMap[attrName]] = val;
+							}
+						}
+					});
+				});
+			} else {
+				// Если инфы о полях нет (например, ручной запуск), собираем всё как раньше
+				Object.values(fieldMap).forEach(fn => fn());
+				Object.keys(attrMap).forEach(attrName => {
+					const val = getAttr(attrName);
+					if (attrName === "isPublished" || attrName === "isDefault") {
+						payload[attrMap[attrName]] = String(val) === "true";
+					} else if (["packageWeightG", "packWeightG", "protein", "fat", "carbs", "kcal"].includes(attrName)) {
+						if (!payload.weights) payload.weights = {};
+						if (!payload.nutrition) payload.nutrition = {};
+						const numVal = val ? Number(val) : null;
+						if (attrName.includes("Weight")) payload.weights[attrMap[attrName]] = numVal;
+						else payload.nutrition[attrMap[attrName]] = numVal;
+					} else if (attrName === "tags" || attrName === "badges") {
+						payload[attrMap[attrName]] = val ? val.split(",").map(t => t.trim()) : [];
+					} else {
+						payload[attrMap[attrName]] = val;
 					}
 				});
+				payload.stockQty = msClient.calculateAvailableStock(product);
 			}
 
-			return {
-				title: product.name,
-				barcode: barcode,
-				externalId: product.externalId,
-				sku: product.code,
-				slug: product.article,
-				country: product.country?.name || undefined,
-				priceCurrent: product.salePrices ? product.salePrices[0].value / 100 : null,
-				priceOld: product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null,
-				description: product.description || "",
-				brand: getAttr("brand"),
-				isPublished: String(getAttr("isPublished")) === "true",
-				stockQty: msClient.calculateAvailableStock(product),
-				unitPriceText: getAttr("unitPriceText"),
-				deliveryType: getAttr("deliveryType"),
-				isDefault: String(getAttr("isDefault")) === "true",
-				variantKey: getAttr("variantKey"),
-				variantValue: getAttr("variantValue"),
-				weights: {
-					weightG: product.weight || null,
-					volumeMl: product.volume || null,
-					packageWeightG: getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null,
-					packWeightG: getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null,
-				},
-				nutrition: {
-					protein: getAttr("protein") ? Number(getAttr("protein")) : null,
-					fat: getAttr("fat") ? Number(getAttr("fat")) : null,
-					carbs: getAttr("carbs") ? Number(getAttr("carbs")) : null,
-					kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
-				},
-				tags: getAttr("tags") ? getAttr("tags").split(",").map((t) => t.trim()) : [],
-				badges: getAttr("badges") ? getAttr("badges").split(",").map((t) => t.trim()) : [],
-				rawAttributes: rawAttributes,
-				updatedAt: new Date().toISOString(),
-			};
-		}).filter(Boolean);
+			// Всегда добавляем время обновления
+			payload.updatedAt = new Date().toISOString();
+			return payload;
+		}).filter(p => p && Object.keys(p).length > 2); // barcode + updatedAt + хотя бы одно поле
 
 		if (updates.length > 0) {
-			log(`[TO SITE] Массовое обновление карточек товаров (${updates.length} поз.): ${JSON.stringify(updates)}`);
+			log(`[TO SITE] Массовое обновление измененных полей (${updates.length} поз.): ${JSON.stringify(updates)}`);
 			await siteRequest("PATCH", "/products/bulk", updates);
 		}
 	},
-
 	/**
 	 * Полная синхронизация данных товара из МС на сайт
 	 */
