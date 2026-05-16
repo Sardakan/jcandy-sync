@@ -151,11 +151,10 @@ const msClient = {
 	},
 	async loadProductsFromAssortment(productIds) {
 		const uniqueProductIds = [...new Set(productIds)];
-		const idsFilter = uniqueProductIds.join(";");
-		const response = await this.request("GET", `/entity/assortment?filter=id=${idsFilter}&expand=country`);
+		const idsFilter = uniqueProductIds.map(id => `id=${id}`).join(";");
+		const response = await this.request("GET", `/entity/assortment?filter=${idsFilter}&expand=country`);
 		return response.data.rows || [];
-	},
-	calculateAvailableStock(product) {
+	},	calculateAvailableStock(product) {
 		// Доступный остаток = Остаток - Резерв
 		return Math.max(0, (product.stock || 0) - (product.reserve || 0));
 	},

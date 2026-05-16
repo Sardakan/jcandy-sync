@@ -73,13 +73,13 @@ const syncProcessor = {
 			email: email,
 			phone: user.phone || siteData.phone || siteData.customerPhone || undefined,
 			actualAddress: addressStr || undefined,
-			// Поле description исключено, чтобы не затирать существующие комментарии в МС
-			code: String(user.id || ""),			
-			externalId: String(user.externalId || ""),
-		};		// Удаляем пустые поля, чтобы не затирать данные в МС
+			code: user.id || user.externalId || undefined,
+			externalId: user.externalId || user.id || undefined,
+		};
+
+		// Удаляем пустые поля, чтобы не затирать данные в МС
 		if (!msCounterparty.phone) delete msCounterparty.phone;
 		if (!msCounterparty.actualAddress) delete msCounterparty.actualAddress;
-		if (!msCounterparty.description) delete msCounterparty.description;
 
 		// 5. Сохранение
 		if (existing) {
@@ -152,22 +152,7 @@ const syncProcessor = {
 					},
 				},
 			});
-		} else {
-			// Если платной доставки нет — вставляем самовывоз (закомментировано до создания услуги в МС)
-			/*
-			positions.push({
-				quantity: 1,
-				price: 0,
-				assortment: {
-					meta: {
-						href: CONFIG.SERVICE_PICKUP_HREF,
-						type: "service",
-						mediaType: "application/json",
-					},
-				},
-			});
-			*/
-		}
+		} 
 		// 4. Форматирование даты
 		let formattedMoment = undefined;
 		const rawDate = order.createdAt || order.date;
@@ -234,26 +219,22 @@ const syncProcessor = {
 		const data = siteData.data || siteData.product || siteData;
 		const countryData = data.country ? await msClient.getCountry(data.country) : null;
 
-		const weight = ((data.weights?.weightG || data.weightG || 0) / 1000);
-
 		const attributesConfig = [
-			{ name: "Брэнд", type: "string", value: data.brand },
-			{ name: "Опубликован", type: "boolean", value: data.isPublished },
-			{ name: "packageWeightG", type: "double", value: data.weights?.packageWeightG || data.packWeightG },
-			{ name: "packLengthMm", type: "double", value: data.attributes?.packLengthMm },
-			{ name: "packWidthMm", type: "double", value: data.attributes?.packWidthMm },
-			{ name: "packHeightMm", type: "double", value: data.attributes?.packHeightMm },
+			{ name: "brand", type: "string", value: data.brand },
+			{ name: "isPublished", type: "boolean", value: data.isPublished },
+			{ name: "packageWeightG", type: "double", value: data.weights?.packageWeightG || data.packageWeightG },
+			{ name: "packWeightG", type: "double", value: data.weights?.packWeightG || data.packWeightG },
 			{ name: "protein", type: "double", value: data.nutrition?.protein },
 			{ name: "fat", type: "double", value: data.nutrition?.fat },
 			{ name: "carbs", type: "double", value: data.nutrition?.carbs },
 			{ name: "kcal", type: "double", value: data.nutrition?.kcal },
-			{ name: "Тэги", type: "text", value: data.tags?.length > 0 ? data.tags.join(", ") : null },
-			{ name: "Бейджи", type: "text", value: data.badges?.length > 0 ? data.badges.join(", ") : null },
+			{ name: "tags", type: "text", value: data.tags?.length > 0 ? data.tags.join(", ") : null },
+			{ name: "badges", type: "text", value: data.badges?.length > 0 ? data.badges.join(", ") : null },
 			{ name: "unitPriceText", type: "string", value: data.unitPriceText },
 			{ name: "deliveryType", type: "string", value: data.deliveryType },
 			{ name: "isDefault", type: "boolean", value: data.isDefault },
-			{ name: "weight", type: "double", value: weight},
-			{ name: "volume", type: "double", value: data.weights?.volumeMl || undefined },
+			{ name: "weightG", type: "double", value: data.weights?.weightG || data.weightG || undefined},
+			{ name: "volumeMl", type: "double", value: data.weights?.volumeMl || undefined },
 			{ name: "variantKey", type: "string", value: data.variantKey },
 			{ name: "variantValue", type: "string", value: data.variantValue },
 
@@ -465,18 +446,23 @@ const syncProcessor = {
 		};
 
 		const handledAttrNames = [
-			"Брэнд",
-			"Опубликован",
-			"packageWeight",
-			"packLengthMm",
-			"packWidthMm",
-			"packHeightMm",
+			"brand",
+			"isPublished",
+			"packageWeightG",
+			"packWeightG",
 			"protein",
 			"fat",
 			"carbs",
 			"kcal",
-			"Тэги",
-			"Бейджи",
+			"tags",
+			"badges",
+			"unitPriceText",
+			"deliveryType",
+			"isDefault",
+			"weightG",
+			"volumeMl",
+			"variantKey",
+			"variantValue"
 		];
 
 		const rawAttributes = [];
@@ -498,22 +484,21 @@ const syncProcessor = {
 			priceCurrent: data.salePrices ? data.salePrices[0].value / 100 : null,
 			priceOld: data.salePrices && data.salePrices[1] ? data.salePrices[1].value / 100 : null,
 			description: data.description || "",
-			brand: getAttr("Брэнд"),
-			isPublished: getAttr("Опубликован") === "true" || getAttr("Опубликован") === true,
+			brand: getAttr("brand"),
+			isPublished: String(getAttr("isPublished")) === "true",
 			stock: msClient.calculateAvailableStock(data),
+			unitPriceText: getAttr("unitPriceText"),
+			deliveryType: getAttr("deliveryType"),
+			isDefault: String(getAttr("isDefault")) === "true",
+			variantKey: getAttr("variantKey"),
+			variantValue: getAttr("variantValue"),
 
 			weights: {
-				weightG: data.weight ? data.weight * 1000 : null,
+				weightG: data.weight || null,
 				volumeMl: data.volume || null,
-				packageWeightG: getAttr("packageWeight") ? Number(getAttr("packageWeight")) : null,
+				packageWeightG: getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null,
+				packWeightG: getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null,
 			},
-
-			/* attributes: {
-				packLengthMm: getAttr("packLengthMm") ? Number(getAttr("packLengthMm")) : null,
-				packWidthMm: getAttr("packWidthMm") ? Number(getAttr("packWidthMm")) : null,
-				packHeightMm: getAttr("packHeightMm") ? Number(getAttr("packHeightMm")) : null,
-			}, */
-
 			nutrition: {
 				protein: getAttr("protein") ? Number(getAttr("protein")) : null,
 				fat: getAttr("fat") ? Number(getAttr("fat")) : null,
@@ -521,20 +506,11 @@ const syncProcessor = {
 				kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
 			},
 
-			tags: getAttr("Тэги")
-				? getAttr("Тэги")
-						.split(",")
-						.map((t) => t.trim())
-				: [],
-			badges: getAttr("Бейджи")
-				? getAttr("Бейджи")
-						.split(",")
-						.map((t) => t.trim())
-				: [],
+			tags: getAttr("tags") ? getAttr("tags").split(",").map((t) => t.trim()) : [],
+			badges: getAttr("badges") ? getAttr("badges").split(",").map((t) => t.trim()) : [],
 			rawAttributes: rawAttributes,
 			updatedAt: new Date().toISOString(),
 		};
-
 		log(`[TO SITE] Полное обновление товара ${barcode} (Страна: ${updatePayload.country})`);
 		await siteRequest("PATCH", `/products/${barcode}`, updatePayload);
 	},
@@ -554,7 +530,7 @@ const syncProcessor = {
 			name: data.name,
 			phone: data.phone,
 			address: data.actualAddress,
-			externalId: data.externalId || data.code,
+			externalId: data.externalCode || data.code,
 			notes: data.description,
 			updatedAt: new Date().toISOString(),
 		};
