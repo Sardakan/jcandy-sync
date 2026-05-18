@@ -574,12 +574,12 @@ const syncProcessor = {
 			return payload;
 		}).filter(p => p && Object.keys(p).length > 2); // barcode + updatedAt + хотя бы одно поле
 
+		log(`[PROCESSOR] Подготовлено обновлений для отправки: ${updates.length} шт.`);
 		if (updates.length > 0) {
-			log(`[TO SITE] Массовое обновление измененных полей (${updates.length} поз.): ${JSON.stringify(updates)}`);
+			log(`[TO SITE] Массовое обновление измененных полей: ${JSON.stringify(updates, null, 2)}`);
 			await siteRequest("PATCH", "/products/bulk", updates);
 		}
-	},
-	/**
+	},	/**
 	 * Полная синхронизация данных товара из МС на сайт
 	 */
 	async syncProductToSite(data) {

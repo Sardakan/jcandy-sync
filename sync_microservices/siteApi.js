@@ -17,7 +17,10 @@ async function siteRequest(method, endpoint, data = null) {
 	const fullUrl = `${CONFIG.SITE_API_BASE.replace(/\/$/, "")}${path}`;
 	
 	log(`Запрос к API сайта: ${method} ${fullUrl}`);
-	try {
+	if (data) {
+		log(`[API PAYLOAD]: ${JSON.stringify(data, null, 2)}`);
+	}
+	try {		
 		const response = await siteApiClient({ method, url: path, data });
 		return response.data;
 	} catch (err) {
