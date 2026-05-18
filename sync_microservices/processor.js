@@ -212,23 +212,25 @@ const syncProcessor = {
 			if (order.deliveryProvider === "cdek") {
 				log(`[PROCESSOR] Обнаружена доставка СДЭК для заказа ${order.id}. Запрашиваю этикетку...`);
 				try {
-					const barcodeData = await siteRequest("GET", `/orders/${order.id}/barcode`);
-					if (barcodeData && barcodeData.url) {
-						log(`[PROCESSOR] Этикетка получена: ${barcodeData.url}. Загружаю в МС...`);
-						const imageData = await msClient.downloadImageAsBase64(barcodeData.url);
-						if (imageData) {
-							await msClient.request("POST", `/entity/customerorder/${orderResult.id}/files`, {
-								filename: imageData.filename,
-								content: imageData.content
-							});
-							log(`[PROCESSOR] Этикетка СДЭК успешно прикреплена к заказу в МС`);
-						}
+					const barcodeResponse = await siteRequest("GET", `/orders/${order.id}/barcode`);
+					const barcodeData = barcodeResponse.data;
+
+					if (barcodeData && barcodeData.base64) {
+						log(`[PROCESSOR] Этикетка получена (Base64). Загружаю в МС как файл: ${barcodeData.fileName}`);
+						
+						await msClient.request("POST", `/entity/customerorder/${orderResult.id}/files`, {
+							filename: barcodeData.fileName || `cdek-${order.id}.pdf`,
+							content: barcodeData.base64
+						});
+						
+						log(`[PROCESSOR] Этикетка СДЭК успешно прикреплена к заказу в МС`);
+					} else {
+						log(`[PROCESSOR] API не вернуло base64 для этикетки СДЭК заказа ${order.id}`, "WARN");
 					}
 				} catch (e) {
 					log(`[PROCESSOR] Ошибка при получении/загрузке этикетки СДЭК: ${e.message}`, "WARN");
 				}
 			}
-
 			return orderResult;		
 		} catch (err) {
 			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
