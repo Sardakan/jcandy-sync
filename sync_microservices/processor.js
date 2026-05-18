@@ -69,12 +69,12 @@ const syncProcessor = {
 		const existing = await msClient.getCounterparty(email);
 		// 4. Маппинг по стандарту
 		const msCounterparty = {
-			name: user.name || user.fullName || email,
+			name: user.name || email,
 			email: email,
-			phone: user.phone || siteData.phone || siteData.customerPhone || undefined,
+			phone: user.phone || undefined,
 			actualAddress: addressStr || undefined,
-			code: user.id || user.externalId || undefined,
-			externalId: user.externalId || user.id || undefined,
+			code: user.id || undefined,
+			externalCode: user.externalId || undefined,
 		};
 
 		// Удаляем пустые поля, чтобы не затирать данные в МС
