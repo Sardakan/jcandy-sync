@@ -501,9 +501,12 @@ const syncProcessor = {
 				"Цена продажи (сайт)": () => {
 					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
 					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
+				},
+				"Старая цена (сайт)": () => {
+					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
+					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
 				}
-			};
-			// Маппинг дополнительных атрибутов
+			};			// Маппинг дополнительных атрибутов
 			const attrMap = {
 				"brand": "brand",
 				"isPublished": "isPublished",
