@@ -193,20 +193,45 @@ const syncProcessor = {
 			// Проверяем, существует ли заказ в МС
 			const existingOrder = await msClient.findOrderByExternalCode(msOrder.externalCode);
 
+			let orderResult;
 			if (existingOrder) {
 				// Если заказ есть — обновляем только статус
-				await msClient.request("PUT", `/entity/customerorder/${existingOrder.id}`, {
+				const response = await msClient.request("PUT", `/entity/customerorder/${existingOrder.id}`, {
 					state: msOrder.state
 				});
+				orderResult = response.data;
 				log(`[PROCESSOR] Статус заказа ${msOrder.externalCode} обновлен в МС`);
-				return existingOrder;
 			} else {
 				// Если заказа нет — создаем новый
 				const response = await msClient.request("POST", "/entity/customerorder", msOrder);
-				log(`[PROCESSOR] Заказ успешно создан. ID: ${response.data.id}`);
-				return response.data;
+				orderResult = response.data;
+				log(`[PROCESSOR] Заказ успешно создан. ID: ${orderResult.id}`);
 			}
-		} catch (err) {			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
+
+			// --- ЛОГИКА ЭТИКЕТКИ СДЭК ---
+			if (order.deliveryProvider === "cdek") {
+				log(`[PROCESSOR] Обнаружена доставка СДЭК для заказа ${order.id}. Запрашиваю этикетку...`);
+				try {
+					const barcodeData = await siteRequest("GET", `/orders/${order.id}/barcode`);
+					if (barcodeData && barcodeData.url) {
+						log(`[PROCESSOR] Этикетка получена: ${barcodeData.url}. Загружаю в МС...`);
+						const imageData = await msClient.downloadImageAsBase64(barcodeData.url);
+						if (imageData) {
+							await msClient.request("POST", `/entity/customerorder/${orderResult.id}/files`, {
+								filename: imageData.filename,
+								content: imageData.content
+							});
+							log(`[PROCESSOR] Этикетка СДЭК успешно прикреплена к заказу в МС`);
+						}
+					}
+				} catch (e) {
+					log(`[PROCESSOR] Ошибка при получении/загрузке этикетки СДЭК: ${e.message}`, "WARN");
+				}
+			}
+
+			return orderResult;		
+		} catch (err) {
+			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
 			log(`[PROCESSOR] Ошибка при создании заказа: ${errorDetail}`, "ERROR");
 			throw err;
 		}
