@@ -162,7 +162,7 @@ const msClient = {
 	async loadProductsFromAssortment(productIds) {
 		const uniqueProductIds = [...new Set(productIds)];
 		const idsFilter = uniqueProductIds.map(id => `id=${id}`).join(";");
-		const response = await this.request("GET", `/entity/assortment?filter=${idsFilter}&expand=country`);
+		const response = await this.request("GET", `/entity/assortment?filter=${idsFilter}&expand=country,attributes`);
 		return response.data.rows || [];
 	},
 	async getCurrentEmployee() {

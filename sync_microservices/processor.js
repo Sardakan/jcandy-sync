@@ -555,16 +555,16 @@ const syncProcessor = {
 					if (handler) {
 						await handler();
 					} else {
-						// Если поля нет в списке известных — отправляем в rawAttributes
-						const attribute = product.attributes?.find(a => a.name === cleanFieldName || a.name === f);
-						if (attribute) {
+						// Если поля нет в списке известных — отправляем в rawAttributes через getAttr
+						const attrValue = getAttr(cleanFieldName) || getAttr(f);
+						if (attrValue !== null && attrValue !== undefined) {
 							if (!payload.rawAttributes) payload.rawAttributes = [];
-							if (!payload.rawAttributes.find(ra => ra.name === attribute.name)) {
-								payload.rawAttributes.push({ name: attribute.name, value: attribute.value });
+							// Избегаем дубликатов
+							if (!payload.rawAttributes.find(ra => ra.name === cleanFieldName)) {
+								payload.rawAttributes.push({ name: cleanFieldName, value: attrValue });
 							}
 						}
-					}
-				}
+					}				}
 			} else {
 				// Если список полей пуст (ручной запуск), собираем всё
 				for (const fn of Object.values(knownFieldsMap)) {
@@ -595,7 +595,7 @@ const syncProcessor = {
 	},	/**
 	 * Полная синхронизация данных товара из МС на сайт
 	 */
-	async syncProductToSite(data) {
+	/* async syncProductToSite(data) {
 		const barcode = data.barcodes ? data.barcodes[0].code128 || data.barcodes[0].ean13 : null;
 		if (!barcode) return;
 
@@ -671,7 +671,7 @@ const syncProcessor = {
 			updatedAt: new Date().toISOString(),
 		};		log(`[TO SITE] Полное обновление товара ${barcode} (Страна: ${updatePayload.country}): ${JSON.stringify(updatePayload)}`);
 		await siteRequest("PATCH", `/products/${barcode}`, updatePayload);
-	},
+	}, */
 	/**
 	 * Синхронизация контрагента из МС на сайт
 	 */
