@@ -509,37 +509,34 @@ const syncProcessor = {
 				description: product.description || "",
 				priceCurrent: product.salePrices ? product.salePrices[0].value / 100 : null,
 				priceOld: product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null,
-				brand: getAttr("brand"),
-				isPublished: String(getAttr("isPublished")) === "true",
-				stockQty: msClient.calculateAvailableStock(product),
-				unitPriceText: getAttr("unitPriceText"),
-				deliveryType: getAttr("deliveryType"),
-				isDefault: String(getAttr("isDefault")) === "true",
-				"variantKey": () => updateVariants(),
-				"variantValue": () => updateVariants(),
-				weightG: getAttr("weightG") ? Number(getAttr("weightG")) : (product.weight ? product.weight * 1000 : null),
-				packWeightG: getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null,
-				packageWeightG: getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null,
-				volumeMl: getAttr("volumeMl") ? Number(getAttr("volumeMl")) : (product.volume || null),
+				brand: getAttr("brand") || getAttr("Брэнд"),
+				isPublished: String(getAttr("isPublished") || getAttr("Опубликован")) === "true",
+
+				weights: {
+					weightG: product.weight ? product.weight * 1000 : null,
+					volumeMl: product.volume || null,
+					packageWeightG: getAttr("packageWeight") ? Number(getAttr("packageWeight")) : null,
+				},
+
+				attributes: {
+					packLengthMm: getAttr("packLengthMm") ? Number(getAttr("packLengthMm")) : null,
+					packWidthMm: getAttr("packWidthMm") ? Number(getAttr("packWidthMm")) : null,
+					packHeightMm: getAttr("packHeightMm") ? Number(getAttr("packHeightMm")) : null,
+				},
+
 				nutrition: {
 					protein: getAttr("protein") ? Number(getAttr("protein")) : null,
 					fat: getAttr("fat") ? Number(getAttr("fat")) : null,
 					carbs: getAttr("carbs") ? Number(getAttr("carbs")) : null,
 					kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
 				},
-				tags: getAttr("tags") ? getAttr("tags").split(",").map((t) => t.trim()) : [],
-				badges: getAttr("badges") ? getAttr("badges").split(",").map((t) => t.trim()) : [],
 
+				tags: (getAttr("tags") || getAttr("Тэги") || "").split(",").map((t) => t.trim()).filter(Boolean),
+				badges: (getAttr("badges") || getAttr("Бейджи") || "").split(",").map((t) => t.trim()).filter(Boolean),
 				rawAttributes: rawAttributes,
 				country: await fetchCountryName(),
 				updatedAt: new Date().toISOString()
 			};
-
-			const updateVariants = () => {
-				payload.variantKey = getAttr("variantKey");
-				payload.variantValue = getAttr("variantValue");
-			};
-
 			return payload;
 		}));
 
