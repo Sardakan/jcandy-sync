@@ -495,6 +495,7 @@ const syncProcessor = {
 					payload.weights.volumeMl = product.volume || null;
 				},
 				"country": () => payload.country = product.country?.name || undefined,
+				"Страна": () => payload.country = product.country?.name || undefined,
 				"salePrices": () => {
 					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
 					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
@@ -507,7 +508,9 @@ const syncProcessor = {
 					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
 					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
 				}
-			};			// Маппинг дополнительных атрибутов
+			};
+
+			// Маппинг дополнительных атрибутов
 			const attrMap = {
 				"brand": "brand",
 				"isPublished": "isPublished",
@@ -528,19 +531,30 @@ const syncProcessor = {
 
 			// Если есть информация об измененных полях, берем только их
 			if (updatedFields.length > 0) {
+				const processedFields = new Set();
+				log(`[DEBUG] Обработка полей для ${barcode}: ${updatedFields.join(", ")}`);
+
 				updatedFields.forEach(f => {
-					if (fieldMap[f]) fieldMap[f]();
-					// Проверка атрибутов (в МС они приходят как "название_атрибута (тип)") или просто "название"
+					// Очищаем имя поля от типа в скобках (например, "Состав (строка)" -> "Состав")
+					const cleanFieldName = f.split(" (")[0];
+
+					// 1. Проверка стандартных полей
+					if (fieldMap[f] || fieldMap[cleanFieldName]) {
+						const fn = fieldMap[f] || fieldMap[cleanFieldName];
+						fn();
+						processedFields.add(f);
+					}
+
+					// 2. Проверка известных атрибутов
 					Object.keys(attrMap).forEach(attrName => {
-						if (f.startsWith(attrName)) {
+						if (cleanFieldName === attrName || f.startsWith(attrName)) {
 							const val = getAttr(attrName);
 							if (attrName === "isPublished" || attrName === "isDefault") {
-								payload[attrMap[attrName]] = String(val) === "true";
+								payload[attrMap[attrName]] = val !== null ? (String(val) === "true") : undefined;
 							} else if (["packageWeightG", "packWeightG", "protein", "fat", "carbs", "kcal"].includes(attrName)) {
 								if (!payload.weights) payload.weights = {};
 								if (!payload.nutrition) payload.nutrition = {};
-								
-								const numVal = val ? Number(val) : null;
+								const numVal = val !== null ? Number(val) : null;
 								if (attrName.includes("Weight")) payload.weights[attrMap[attrName]] = numVal;
 								else payload.nutrition[attrMap[attrName]] = numVal;
 							} else if (attrName === "tags" || attrName === "badges") {
@@ -548,8 +562,22 @@ const syncProcessor = {
 							} else {
 								payload[attrMap[attrName]] = val;
 							}
+							processedFields.add(f);
 						}
 					});
+
+					// 3. Все остальное — в rawAttributes
+					if (!processedFields.has(f)) {
+						const attribute = product.attributes?.find(a => a.name === cleanFieldName || a.name === f);
+						if (attribute) {
+							if (!payload.rawAttributes) payload.rawAttributes = [];
+							payload.rawAttributes.push({
+								name: attribute.name,
+								value: attribute.value
+							});
+							processedFields.add(f);
+						}
+					}
 				});
 			} else {
 				// Если инфы о полях нет (например, ручной запуск), собираем всё как раньше
