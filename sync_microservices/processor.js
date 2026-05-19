@@ -468,7 +468,6 @@ const syncProcessor = {
 			const barcode = product.barcodes ? product.barcodes[0].code128 || product.barcodes[0].ean13 : null;
 			if (!barcode) return null;
 
-			// Находим информацию о том, какие поля изменились для этого товара
 			const updateInfo = webhookUpdates.find(u => u.id === product.id);
 			const updatedFields = updateInfo ? updateInfo.updatedFields : [];
 
@@ -477,15 +476,32 @@ const syncProcessor = {
 				return attr ? attr.value : null;
 			};
 
-			// Базовый объект с обязательным ключом
+			// Базовый объект
 			const payload = { barcode: barcode };
 
-			// Маппинг полей МС -> Поля сайта
-			const fieldMap = {
+			// Список "известных" полей, которые маппятся в корень или спец. объекты
+			const knownFieldsMap = {
 				"name": () => payload.title = product.name,
 				"article": () => payload.slug = product.article,
 				"code": () => payload.sku = product.code,
 				"description": () => payload.description = product.description,
+				"country": () => payload.country = product.country?.name || getAttr("Страна") || getAttr("country"),
+				"Страна": () => payload.country = product.country?.name || getAttr("Страна") || getAttr("country"),
+				"salePrices": () => {
+					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
+					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
+				},
+				"Цена продажи (сайт)": () => payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null,
+				"Старая цена (сайт)": () => payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null,
+				"brand": () => payload.brand = getAttr("brand"),
+				"isPublished": () => payload.isPublished = String(getAttr("isPublished")) === "true",
+				"unitPriceText": () => payload.unitPriceText = getAttr("unitPriceText"),
+				"deliveryType": () => payload.deliveryType = getAttr("deliveryType"),
+				"isDefault": () => payload.isDefault = String(getAttr("isDefault")) === "true",
+				"variantKey": () => payload.variantKey = getAttr("variantKey"),
+				"variantValue": () => payload.variantValue = getAttr("variantValue"),
+				"tags": () => payload.tags = getAttr("tags") ? getAttr("tags").split(",").map(t => t.trim()) : [],
+				"badges": () => payload.badges = getAttr("badges") ? getAttr("badges").split(",").map(t => t.trim()) : [],
 				"weight": () => {
 					if (!payload.weights) payload.weights = {};
 					payload.weights.weightG = product.weight ? product.weight * 1000 : null;
@@ -494,128 +510,80 @@ const syncProcessor = {
 					if (!payload.weights) payload.weights = {};
 					payload.weights.volumeMl = product.volume || null;
 				},
-				"country": () => payload.country = product.country?.name || undefined,
-				"Страна": () => payload.country = product.country?.name || undefined,
-				"salePrices": () => {
-					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
-					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
+				"packageWeightG": () => {
+					if (!payload.weights) payload.weights = {};
+					payload.weights.packageWeightG = getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null;
 				},
-				"Цена продажи (сайт)": () => {
-					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
-					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
+				"packWeightG": () => {
+					if (!payload.weights) payload.weights = {};
+					payload.weights.packWeightG = getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null;
 				},
-				"Старая цена (сайт)": () => {
-					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
-					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
+				"protein": () => {
+					if (!payload.nutrition) payload.nutrition = {};
+					payload.nutrition.protein = getAttr("protein") ? Number(getAttr("protein")) : null;
+				},
+				"fat": () => {
+					if (!payload.nutrition) payload.nutrition = {};
+					payload.nutrition.fat = getAttr("fat") ? Number(getAttr("fat")) : null;
+				},
+				"carbs": () => {
+					if (!payload.nutrition) payload.nutrition = {};
+					payload.nutrition.carbs = getAttr("carbs") ? Number(getAttr("carbs")) : null;
+				},
+				"kcal": () => {
+					if (!payload.nutrition) payload.nutrition = {};
+					payload.nutrition.kcal = getAttr("kcal") ? Number(getAttr("kcal")) : null;
 				}
 			};
 
-			// Маппинг дополнительных атрибутов
-			const attrMap = {
-				"brand": "brand",
-				"isPublished": "isPublished",
-				"unitPriceText": "unitPriceText",
-				"deliveryType": "deliveryType",
-				"isDefault": "isDefault",
-				"variantKey": "variantKey",
-				"variantValue": "variantValue",
-				"packageWeightG": "packageWeightG",
-				"packWeightG": "packWeightG",
-				"protein": "protein",
-				"fat": "fat",
-				"carbs": "carbs",
-				"kcal": "kcal",
-				"tags": "tags",
-				"badges": "badges"
-			};
-
-			// Если есть информация об измененных полях, берем только их
 			if (updatedFields.length > 0) {
-				const processedFields = new Set();
-				log(`[DEBUG] Обработка полей для ${barcode}: ${updatedFields.join(", ")}`);
-
 				updatedFields.forEach(f => {
-					// Очищаем имя поля от типа в скобках (например, "Состав (строка)" -> "Состав")
 					const cleanFieldName = f.split(" (")[0];
-
-					// 1. Проверка стандартных полей
-					if (fieldMap[f] || fieldMap[cleanFieldName]) {
-						const fn = fieldMap[f] || fieldMap[cleanFieldName];
-						fn();
-						processedFields.add(f);
-					}
-
-					// 2. Проверка известных атрибутов
-					Object.keys(attrMap).forEach(attrName => {
-						if (cleanFieldName === attrName || f.startsWith(attrName)) {
-							const val = getAttr(attrName);
-							if (attrName === "isPublished" || attrName === "isDefault") {
-								payload[attrMap[attrName]] = val !== null ? (String(val) === "true") : undefined;
-							} else if (["packageWeightG", "packWeightG", "protein", "fat", "carbs", "kcal"].includes(attrName)) {
-								if (!payload.weights) payload.weights = {};
-								if (!payload.nutrition) payload.nutrition = {};
-								const numVal = val !== null ? Number(val) : null;
-								if (attrName.includes("Weight")) payload.weights[attrMap[attrName]] = numVal;
-								else payload.nutrition[attrMap[attrName]] = numVal;
-							} else if (attrName === "tags" || attrName === "badges") {
-								payload[attrMap[attrName]] = val ? val.split(",").map(t => t.trim()) : [];
-							} else {
-								payload[attrMap[attrName]] = val;
-							}
-							processedFields.add(f);
-						}
-					});
-
-					// 3. Все остальное — в rawAttributes
-					if (!processedFields.has(f)) {
+					
+					if (knownFieldsMap[cleanFieldName]) {
+						knownFieldsMap[cleanFieldName]();
+					} else if (knownFieldsMap[f]) {
+						knownFieldsMap[f]();
+					} else {
+						// Если поля нет в списке известных — отправляем в rawAttributes
 						const attribute = product.attributes?.find(a => a.name === cleanFieldName || a.name === f);
 						if (attribute) {
 							if (!payload.rawAttributes) payload.rawAttributes = [];
-							payload.rawAttributes.push({
-								name: attribute.name,
-								value: attribute.value
-							});
-							processedFields.add(f);
+							// Избегаем дубликатов в rawAttributes
+							if (!payload.rawAttributes.find(ra => ra.name === attribute.name)) {
+								payload.rawAttributes.push({ name: attribute.name, value: attribute.value });
+							}
 						}
 					}
 				});
 			} else {
-				// Если инфы о полях нет (например, ручной запуск), собираем всё как раньше
-				Object.values(fieldMap).forEach(fn => fn());
-				Object.keys(attrMap).forEach(attrName => {
-					const val = getAttr(attrName);
-					if (attrName === "isPublished" || attrName === "isDefault") {
-						payload[attrMap[attrName]] = String(val) === "true";
-					} else if (["packageWeightG", "packWeightG", "protein", "fat", "carbs", "kcal"].includes(attrName)) {
-						if (!payload.weights) payload.weights = {};
-						if (!payload.nutrition) payload.nutrition = {};
-						const numVal = val ? Number(val) : null;
-						if (attrName.includes("Weight")) payload.weights[attrMap[attrName]] = numVal;
-						else payload.nutrition[attrMap[attrName]] = numVal;
-					} else if (attrName === "tags" || attrName === "badges") {
-						payload[attrMap[attrName]] = val ? val.split(",").map(t => t.trim()) : [];
-					} else {
-						payload[attrMap[attrName]] = val;
+				// Если список полей пуст (ручной запуск), собираем всё
+				Object.values(knownFieldsMap).forEach(fn => fn());
+				// И все остальные атрибуты в rawAttributes
+				const handledNames = Object.keys(knownFieldsMap);
+				product.attributes?.forEach(attr => {
+					if (!handledNames.includes(attr.name)) {
+						if (!payload.rawAttributes) payload.rawAttributes = [];
+						payload.rawAttributes.push({ name: attr.name, value: attr.value });
 					}
 				});
 				payload.stockQty = msClient.calculateAvailableStock(product);
 			}
 
-			// Всегда добавляем время обновления
 			payload.updatedAt = new Date().toISOString();
 			return payload;
-		}).filter(p => p && Object.keys(p).length > 2); // barcode + updatedAt + хотя бы одно поле
+		}).filter(p => p && Object.keys(p).length > 2);
 
 		log(`[PROCESSOR] Подготовлено обновлений для отправки: ${updates.length} шт.`);
 		if (updates.length > 0) {
-			log(`[TO SITE] Массовое обновление измененных полей: ${JSON.stringify(updates, null, 2)}`);
 			await siteRequest("PATCH", "/products/bulk", updates);
+			log(`[TO SITE] Массовое обновление успешно отправлено`);
 		}
-	},	/**
+	},
+	/**
 	 * Полная синхронизация данных товара из МС на сайт
 	 */
-	async syncProductToSite(data) {
-		const barcode = data.barcodes ? data.barcodes[0].code128 || data.barcodes[0].ean13 : null;
+	async syncProductToSite(data) {		const barcode = data.barcodes ? data.barcodes[0].code128 || data.barcodes[0].ean13 : null;
 		if (!barcode) return;
 
 		const getAttr = (name) => {
