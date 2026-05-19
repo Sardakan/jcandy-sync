@@ -9,6 +9,16 @@ const syncProcessor = require("./processor");
 const app = express();
 app.use(express.json());
 
+let myEmployeeHref = null;
+
+// Получаем наш href при старте, чтобы знать, какие вебхуки игнорировать
+msClient.getCurrentEmployee().then(employee => {
+	if (employee && employee.meta) {
+		myEmployeeHref = employee.meta.href;
+		log(`[INIT] Микросервис работает под пользователем: ${employee.name} (${myEmployeeHref})`);
+	}
+}).catch(e => log(`[INIT] Ошибка получения данных сотрудника: ${e.message}`, "ERROR"));
+
 // --- ТЕСТОВЫЕ ДАННЫЕ ДЛЯ МИГРАЦИИ ---
 const TEST_DATA = {
 	products: ["MS-TEST-0001", "MS-TEST-0002", "MS-TEST-0003", "MS-TEST-0004"],
@@ -131,6 +141,12 @@ async function handleWebhook(req, res) {
 		}
 		for (const event of events) {
 			const type = event.meta.type;
+
+			// Проверка автора: если изменение сделал сам МС, игнорируем, чтобы избежать цикла
+			if (myEmployeeHref && event.author === myEmployeeHref) {
+				log(`[MS WEBHOOK] Пропуск события ${type} (${event.action}): автор — микросервис`);
+				continue;
+			}
 
 			// 2. Обработка остатков (только документы)
 			if (["customerorder", "supply", "demand"].includes(type)) {

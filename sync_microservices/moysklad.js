@@ -154,8 +154,17 @@ const msClient = {
 		const idsFilter = uniqueProductIds.map(id => `id=${id}`).join(";");
 		const response = await this.request("GET", `/entity/assortment?filter=${idsFilter}&expand=country`);
 		return response.data.rows || [];
-	},	calculateAvailableStock(product) {
-		// Доступный остаток = Остаток - Резерв
+	},
+	async getCurrentEmployee() {
+		try {
+			const response = await this.request("GET", "/context/employee");
+			return response.data;
+		} catch (error) {
+			log(`Ошибка при получении данных текущего сотрудника: ${error.message}`, "ERROR");
+			return null;
+		}
+	},
+	calculateAvailableStock(product) {		// Доступный остаток = Остаток - Резерв
 		return Math.max(0, (product.stock || 0) - (product.reserve || 0));
 	},
 };
