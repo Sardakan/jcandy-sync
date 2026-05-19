@@ -77,7 +77,17 @@ const msClient = {
 			return null;
 		}
 	},
-
+	async getCountryByHref(href) {
+		if (!href) return null;
+		try {
+			const apiPath = href.replace(CONFIG.MS_API_BASE, "");
+			const response = await this.request("GET", apiPath);
+			return response.data;
+		} catch (error) {
+			log(`Ошибка при получении страны по ссылке: ${error.message}`, "ERROR");
+			return null;
+		}
+	},
 	async getCounterparty(email) {
 		if (!email) return null;
 		try {

@@ -464,7 +464,7 @@ const syncProcessor = {
 	async syncProductsToSiteBulk(msProducts, webhookUpdates = []) {
 		if (!msProducts || msProducts.length === 0) return;
 
-		const updates = msProducts.map((product) => {
+		const updates = await Promise.all(msProducts.map(async (product) => {
 			const barcode = product.barcodes ? product.barcodes[0].code128 || product.barcodes[0].ean13 : null;
 			if (!barcode) return null;
 
@@ -474,12 +474,20 @@ const syncProcessor = {
 			const getAttr = (name) => {
 				const attr = product.attributes ? product.attributes.find((a) => a.name.toLowerCase() === name.toLowerCase()) : null;
 				if (!attr) return null;
-				// Если это справочник, значение может быть в attr.value.name или attr.value
 				return typeof attr.value === 'object' ? attr.value.name : attr.value;
 			};
 
 			// Базовый объект
 			const payload = { barcode: barcode };
+
+			// Функция получения страны (с поддержкой ссылок)
+			const fetchCountryName = async () => {
+				if (product.country?.meta?.href) {
+					const countryData = await msClient.getCountryByHref(product.country.meta.href);
+					if (countryData?.name) return countryData.name;
+				}
+				return getAttr("Страна") || getAttr("country");
+			};
 
 			// Список "известных" полей и групп
 			const knownFieldsMap = {
@@ -487,8 +495,7 @@ const syncProcessor = {
 				"article": () => payload.slug = product.article,
 				"code": () => payload.sku = product.code,
 				"description": () => payload.description = product.description,
-				"country": () => payload.country = product.country?.name || getAttr("Страна") || getAttr("country"),
-				"Страна": () => payload.country = product.country?.name || getAttr("Страна") || getAttr("country"),				
+				"country": async () => payload.country = await fetchCountryName(),
 				"salePrices": () => {
 					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
 					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
@@ -539,28 +546,30 @@ const syncProcessor = {
 				payload.variantKey = getAttr("variantKey");
 				payload.variantValue = getAttr("variantValue");
 			};
-			if (updatedFields.length > 0) {				updatedFields.forEach(f => {
+
+			if (updatedFields.length > 0) {
+				for (const f of updatedFields) {
 					const cleanFieldName = f.split(" (")[0];
+					const handler = knownFieldsMap[cleanFieldName] || knownFieldsMap[f];
 					
-					if (knownFieldsMap[cleanFieldName]) {
-						knownFieldsMap[cleanFieldName]();
-					} else if (knownFieldsMap[f]) {
-						knownFieldsMap[f]();
+					if (handler) {
+						await handler();
 					} else {
 						// Если поля нет в списке известных — отправляем в rawAttributes
 						const attribute = product.attributes?.find(a => a.name === cleanFieldName || a.name === f);
 						if (attribute) {
 							if (!payload.rawAttributes) payload.rawAttributes = [];
-							// Избегаем дубликатов в rawAttributes
 							if (!payload.rawAttributes.find(ra => ra.name === attribute.name)) {
 								payload.rawAttributes.push({ name: attribute.name, value: attribute.value });
 							}
 						}
 					}
-				});
+				}
 			} else {
 				// Если список полей пуст (ручной запуск), собираем всё
-				Object.values(knownFieldsMap).forEach(fn => fn());
+				for (const fn of Object.values(knownFieldsMap)) {
+					await fn();
+				}
 				// И все остальные атрибуты в rawAttributes
 				const handledNames = Object.keys(knownFieldsMap);
 				product.attributes?.forEach(attr => {
@@ -574,15 +583,16 @@ const syncProcessor = {
 
 			payload.updatedAt = new Date().toISOString();
 			return payload;
-		}).filter(p => p && Object.keys(p).length > 2);
+		}));
 
-		log(`[PROCESSOR] Подготовлено обновлений для отправки: ${updates.length} шт.`);
-		if (updates.length > 0) {
-			await siteRequest("PATCH", "/products/bulk", updates);
+		const filteredUpdates = updates.filter(p => p && Object.keys(p).length > 2);
+
+		log(`[PROCESSOR] Подготовлено обновлений для отправки: ${filteredUpdates.length} шт.`);
+		if (filteredUpdates.length > 0) {
+			await siteRequest("PATCH", "/products/bulk", filteredUpdates);
 			log(`[TO SITE] Массовое обновление успешно отправлено`);
 		}
-	},
-	/**
+	},	/**
 	 * Полная синхронизация данных товара из МС на сайт
 	 */
 	async syncProductToSite(data) {
