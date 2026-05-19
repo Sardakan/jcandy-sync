@@ -478,22 +478,18 @@ const syncProcessor = {
 				"brand", "isPublished", "packageWeightG", "packWeightG", "protein", "fat", 
 				"carbs", "kcal", "tags", "badges", "unitPriceText", "deliveryType", 
 				"isDefault", "weightG", "volumeMl", "variantKey", "variantValue",
-				"Страна", "country"
+				"Страна", "country", "Брэнд", "Опубликован", "Тэги", "Бейджи", "packageWeight"
 			];
 
-			// Собираем все остальные атрибуты в rawAttributes
+			// Собираем все остальные атрибуты в rawAttributes (логика из рабочего примера)
 			const rawAttributes = [];
 			if (product.attributes) {
 				product.attributes.forEach((attr) => {
 					if (!handledAttrNames.includes(attr.name)) {
-						const val = typeof attr.value === 'object' ? attr.value.name : attr.value;
-						if (val !== null && val !== undefined) {
-							rawAttributes.push({ name: attr.name, value: val });
-						}
+						rawAttributes.push({ name: attr.name, value: attr.value });
 					}
 				});
 			}
-
 			// Функция получения страны
 			const fetchCountryName = async () => {
 				if (product.country?.meta?.href) {
@@ -519,8 +515,8 @@ const syncProcessor = {
 				unitPriceText: getAttr("unitPriceText"),
 				deliveryType: getAttr("deliveryType"),
 				isDefault: String(getAttr("isDefault")) === "true",
-				variantKey: getAttr("variantKey"),
-				variantValue: getAttr("variantValue"),
+				"variantKey": () => updateVariants(),
+				"variantValue": () => updateVariants(),
 				weightG: getAttr("weightG") ? Number(getAttr("weightG")) : (product.weight ? product.weight * 1000 : null),
 				packWeightG: getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null,
 				packageWeightG: getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null,
@@ -533,9 +529,15 @@ const syncProcessor = {
 				},
 				tags: getAttr("tags") ? getAttr("tags").split(",").map((t) => t.trim()) : [],
 				badges: getAttr("badges") ? getAttr("badges").split(",").map((t) => t.trim()) : [],
+
 				rawAttributes: rawAttributes,
 				country: await fetchCountryName(),
 				updatedAt: new Date().toISOString()
+			};
+
+			const updateVariants = () => {
+				payload.variantKey = getAttr("variantKey");
+				payload.variantValue = getAttr("variantValue");
 			};
 
 			return payload;
@@ -686,6 +688,7 @@ const syncProcessor = {
 		}
 	}, */
 	/**
+
 	 * Синхронизация контрагента из МС на сайт
 	 */
 	async syncCounterpartyToSite(data) {
@@ -705,8 +708,7 @@ const syncProcessor = {
 			updatedAt: new Date().toISOString(),
 		};
 
-		log(`[TO SITE] Обновление контрагента ${email}`);
-		try {
+		log(`[TO SITE] Обновление контрагента ${email}: ${JSON.stringify(updatePayload)}`);		try {
 			await siteRequest("PATCH", `/customers/${encodeURIComponent(email)}`, updatePayload);
 		} catch (e) {
 			log(`[PROCESSOR] Ошибка отправки контрагента на сайт: ${e.message}`, "ERROR");

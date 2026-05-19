@@ -109,7 +109,11 @@ async function handleWebhook(req, res) {
 	try {
 		const events = req.body.events || [];
 		
-		// Группируем события по типам для массовой обработки
+		// Логируем типы всех событий в пакете
+		if (events.length > 0) {
+			const types = events.map(e => `${e.meta.type}:${e.action}`).join(", ");
+			log(`[MS WEBHOOK] Пакет событий: [${types}]`);
+		}
 		const productUpdates = events
 			.filter(e => e.meta.type === "product" && e.action === "UPDATE")
 			.map(e => ({
