@@ -479,7 +479,7 @@ const syncProcessor = {
 			// Базовый объект
 			const payload = { barcode: barcode };
 
-			// Список "известных" полей, которые маппятся в корень или спец. объекты
+			// Список "известных" полей и групп
 			const knownFieldsMap = {
 				"name": () => payload.title = product.name,
 				"article": () => payload.slug = product.article,
@@ -498,46 +498,46 @@ const syncProcessor = {
 				"unitPriceText": () => payload.unitPriceText = getAttr("unitPriceText"),
 				"deliveryType": () => payload.deliveryType = getAttr("deliveryType"),
 				"isDefault": () => payload.isDefault = String(getAttr("isDefault")) === "true",
-				"variantKey": () => payload.variantKey = getAttr("variantKey"),
-				"variantValue": () => payload.variantValue = getAttr("variantValue"),
 				"tags": () => payload.tags = getAttr("tags") ? getAttr("tags").split(",").map(t => t.trim()) : [],
 				"badges": () => payload.badges = getAttr("badges") ? getAttr("badges").split(",").map(t => t.trim()) : [],
-				"weight": () => {
-					if (!payload.weights) payload.weights = {};
-					payload.weights.weightG = product.weight ? product.weight * 1000 : null;
-				},
-				"volume": () => {
-					if (!payload.weights) payload.weights = {};
-					payload.weights.volumeMl = product.volume || null;
-				},
-				"packageWeightG": () => {
-					if (!payload.weights) payload.weights = {};
-					payload.weights.packageWeightG = getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null;
-				},
-				"packWeightG": () => {
-					if (!payload.weights) payload.weights = {};
-					payload.weights.packWeightG = getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null;
-				},
-				"protein": () => {
-					if (!payload.nutrition) payload.nutrition = {};
-					payload.nutrition.protein = getAttr("protein") ? Number(getAttr("protein")) : null;
-				},
-				"fat": () => {
-					if (!payload.nutrition) payload.nutrition = {};
-					payload.nutrition.fat = getAttr("fat") ? Number(getAttr("fat")) : null;
-				},
-				"carbs": () => {
-					if (!payload.nutrition) payload.nutrition = {};
-					payload.nutrition.carbs = getAttr("carbs") ? Number(getAttr("carbs")) : null;
-				},
-				"kcal": () => {
-					if (!payload.nutrition) payload.nutrition = {};
-					payload.nutrition.kcal = getAttr("kcal") ? Number(getAttr("kcal")) : null;
-				}
+				// Группа: Веса (в корень)
+				"weight": () => updateWeights(),
+				"weightG": () => updateWeights(),
+				"packWeightG": () => updateWeights(),
+				"packageWeightG": () => updateWeights(),
+				"volume": () => updateWeights(),
+				"volumeMl": () => updateWeights(),
+				// Группа: Питание (в объект nutrition)
+				"protein": () => updateNutrition(),
+				"fat": () => updateNutrition(),
+				"carbs": () => updateNutrition(),
+				"kcal": () => updateNutrition(),
+				// Группа: Варианты (в корень)
+				"variant": () => updateVariants(),
+				"variantKey": () => updateVariants(),
+				"variantValue": () => updateVariants()
 			};
 
-			if (updatedFields.length > 0) {
-				updatedFields.forEach(f => {
+			const updateWeights = () => {
+				payload.weightG = getAttr("weightG") ? Number(getAttr("weightG")) : (product.weight ? product.weight * 1000 : null);
+				payload.packWeightG = getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null;
+				payload.packageWeightG = getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null;
+				payload.volumeMl = getAttr("volumeMl") ? Number(getAttr("volumeMl")) : (product.volume || null);
+			};
+
+			const updateNutrition = () => {
+				if (!payload.nutrition) payload.nutrition = {};
+				payload.nutrition.protein = getAttr("protein") ? Number(getAttr("protein")) : null;
+				payload.nutrition.fat = getAttr("fat") ? Number(getAttr("fat")) : null;
+				payload.nutrition.carbs = getAttr("carbs") ? Number(getAttr("carbs")) : null;
+				payload.nutrition.kcal = getAttr("kcal") ? Number(getAttr("kcal")) : null;
+			};
+
+			const updateVariants = () => {
+				payload.variantKey = getAttr("variantKey");
+				payload.variantValue = getAttr("variantValue");
+			};
+			if (updatedFields.length > 0) {				updatedFields.forEach(f => {
 					const cleanFieldName = f.split(" (")[0];
 					
 					if (knownFieldsMap[cleanFieldName]) {
@@ -626,7 +626,7 @@ const syncProcessor = {
 			externalId: data.externalId,
 			sku: data.code,
 			slug: data.article,
-			country: data.country?.name || undefined,
+			country: data.country?.name || getAttr("Страна") || getAttr("country") || undefined,
 			priceCurrent: data.salePrices ? data.salePrices[0].value / 100 : null,
 			priceOld: data.salePrices && data.salePrices[1] ? data.salePrices[1].value / 100 : null,
 			description: data.description || "",
@@ -639,12 +639,13 @@ const syncProcessor = {
 			variantKey: getAttr("variantKey"),
 			variantValue: getAttr("variantValue"),
 
-			weights: {
-				weightG: data.weight || null,
-				volumeMl: data.volume || null,
-				packageWeightG: getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null,
-				packWeightG: getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null,
-			},
+			// Веса теперь в корне
+			weightG: getAttr("weightG") ? Number(getAttr("weightG")) : (data.weight ? data.weight * 1000 : null),
+			packWeightG: getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null,
+			packageWeightG: getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null,
+			volumeMl: getAttr("volumeMl") ? Number(getAttr("volumeMl")) : (data.volume || null),
+
+			// Питание остается в объекте nutrition
 			nutrition: {
 				protein: getAttr("protein") ? Number(getAttr("protein")) : null,
 				fat: getAttr("fat") ? Number(getAttr("fat")) : null,
@@ -656,8 +657,7 @@ const syncProcessor = {
 			badges: getAttr("badges") ? getAttr("badges").split(",").map((t) => t.trim()) : [],
 			rawAttributes: rawAttributes,
 			updatedAt: new Date().toISOString(),
-		};
-		log(`[TO SITE] Полное обновление товара ${barcode} (Страна: ${updatePayload.country}): ${JSON.stringify(updatePayload)}`);
+		};		log(`[TO SITE] Полное обновление товара ${barcode} (Страна: ${updatePayload.country}): ${JSON.stringify(updatePayload)}`);
 		await siteRequest("PATCH", `/products/${barcode}`, updatePayload);
 	},
 	/**
