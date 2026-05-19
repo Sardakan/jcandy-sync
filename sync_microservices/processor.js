@@ -472,8 +472,10 @@ const syncProcessor = {
 			const updatedFields = updateInfo ? updateInfo.updatedFields : [];
 
 			const getAttr = (name) => {
-				const attr = product.attributes ? product.attributes.find((a) => a.name === name) : null;
-				return attr ? attr.value : null;
+				const attr = product.attributes ? product.attributes.find((a) => a.name.toLowerCase() === name.toLowerCase()) : null;
+				if (!attr) return null;
+				// Если это справочник, значение может быть в attr.value.name или attr.value
+				return typeof attr.value === 'object' ? attr.value.name : attr.value;
 			};
 
 			// Базовый объект
@@ -486,7 +488,7 @@ const syncProcessor = {
 				"code": () => payload.sku = product.code,
 				"description": () => payload.description = product.description,
 				"country": () => payload.country = product.country?.name || getAttr("Страна") || getAttr("country"),
-				"Страна": () => payload.country = product.country?.name || getAttr("Страна") || getAttr("country"),
+				"Страна": () => payload.country = product.country?.name || getAttr("Страна") || getAttr("country"),				
 				"salePrices": () => {
 					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
 					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
@@ -583,15 +585,15 @@ const syncProcessor = {
 	/**
 	 * Полная синхронизация данных товара из МС на сайт
 	 */
-	async syncProductToSite(data) {		const barcode = data.barcodes ? data.barcodes[0].code128 || data.barcodes[0].ean13 : null;
+	async syncProductToSite(data) {
+		const barcode = data.barcodes ? data.barcodes[0].code128 || data.barcodes[0].ean13 : null;
 		if (!barcode) return;
 
 		const getAttr = (name) => {
-			const attr = data.attributes ? data.attributes.find((a) => a.name === name) : null;
-			return attr ? attr.value : null;
-		};
-
-		const handledAttrNames = [
+			const attr = data.attributes ? data.attributes.find((a) => a.name.toLowerCase() === name.toLowerCase()) : null;
+			if (!attr) return null;
+			return typeof attr.value === 'object' ? attr.value.name : attr.value;
+		};		const handledAttrNames = [
 			"brand",
 			"isPublished",
 			"packageWeightG",
