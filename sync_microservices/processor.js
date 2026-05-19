@@ -481,15 +481,19 @@ const syncProcessor = {
 				"Страна", "country", "Брэнд", "Опубликован", "Тэги", "Бейджи", "packageWeight"
 			];
 
-			// Собираем все остальные атрибуты в rawAttributes (логика из рабочего примера)
+			// Собираем все остальные атрибуты в rawAttributes (логика из рабочего примера + заглушка group)
 			const rawAttributes = [];
 			if (product.attributes) {
 				product.attributes.forEach((attr) => {
 					if (!handledAttrNames.includes(attr.name)) {
-						rawAttributes.push({ name: attr.name, value: attr.value });
+						rawAttributes.push({ 
+							group: "Общее", 
+							name: attr.name, 
+							value: attr.value 
+						});
 					}
 				});
-			}
+			}			
 			// Функция получения страны
 			const fetchCountryName = async () => {
 				if (product.country?.meta?.href) {
