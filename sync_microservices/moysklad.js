@@ -158,13 +158,12 @@ const msClient = {
 	async getCurrentEmployee() {
 		try {
 			const response = await this.request("GET", "/context/employee");
-			return response.data;
+			return response.data; // Содержит uid и name
 		} catch (error) {
 			log(`Ошибка при получении данных текущего сотрудника: ${error.message}`, "ERROR");
 			return null;
 		}
-	},
-	calculateAvailableStock(product) {		// Доступный остаток = Остаток - Резерв
+	},	calculateAvailableStock(product) {		// Доступный остаток = Остаток - Резерв
 		return Math.max(0, (product.stock || 0) - (product.reserve || 0));
 	},
 };

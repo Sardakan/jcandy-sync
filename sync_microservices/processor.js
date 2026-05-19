@@ -360,15 +360,14 @@ const syncProcessor = {
 		const existingProduct = await msClient.findProductByBarcode(data.barcode);
 
 		try {
-			const msProduct = await this.mapToMsProduct(data);
-			
 			if (existingProduct) {
-				await msClient.request("PUT", `/entity/product/${existingProduct.id}`, msProduct);
-				log(`[PROCESSOR] Товар ОБНОВЛЕН: "${data.title || data.name}" (${data.barcode})`);
+				log(`[PROCESSOR] Товар уже существует в МС (${data.barcode}). Обновление со стороны сайта ОТКЛЮЧЕНО.`);
+				return;
 			} else {
+				const msProduct = await this.mapToMsProduct(data);
 				await msClient.request("POST", "/entity/product", msProduct);
 				log(`[PROCESSOR] Товар СОЗДАН: "${data.title || data.name}" (${data.barcode})`);
-			}
+			}		
 		} catch (err) {
 			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
 			log(`[PROCESSOR] Ошибка синхронизации товара ${data.barcode}: ${errorDetail}`, "ERROR");
