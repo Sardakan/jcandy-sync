@@ -140,18 +140,21 @@ const syncProcessor = {
 		}
 		// 3. Добавление платной доставки
 		if (order.deliveryPrice && order.deliveryPrice !== 0) {
-			positions.push({
-				quantity: 1,
-				price: order.deliveryPrice * 100,
-				vat: 22,
-				assortment: {
-					meta: {
-						href: CONFIG.SERVICE_DELIVERY_HREF,
-						type: "service",
-						mediaType: "application/json",
+			const deliveryServiceName = order.deliveryTariffName || "Доставка";
+			const serviceMeta = await msClient.ensureService(deliveryServiceName, order.deliveryPrice);
+
+			if (serviceMeta) {				
+				positions.push({
+					quantity: 1,
+					price: order.deliveryPrice * 100,
+					vat: 22,
+					assortment: {
+						meta: serviceMeta,
 					},
-				},
-			});
+				});
+			} else {
+				log(`[PROCESSOR] Не удалось получить услугу доставки "${deliveryServiceName}". Позиция доставки пропущена.`, "WARN");
+			}
 		} 
 		// 4. Форматирование даты
 		let formattedMoment = undefined;

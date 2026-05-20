@@ -126,7 +126,36 @@ const msClient = {
 		}
 	},
 
-	async downloadImageAsBase64(url) {
+	async ensureService(name, price = 0) {
+		try {
+			const search = await this.request("GET", `/entity/service?filter=name=${encodeURIComponent(name)}`);
+			if (search.data.rows && search.data.rows.length > 0) {
+				return search.data.rows[0].meta;
+			}
+
+			log(`Услуга "${name}" не найдена. Создаю с ценой ${price}...`, "INFO");
+			const response = await this.request("POST", "/entity/service", {
+				name: name,
+				paymentItemType: "SERVICE",
+				salePrices: [
+					{
+						value: price * 100,
+						priceType: {
+							meta: {
+								href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c98c9c6d-4619-11f1-0a80-1ba10025a76e`,
+								type: "pricetype",
+								mediaType: "application/json",
+							},
+						},
+					},
+				],
+			});
+			return response.data.meta;
+		} catch (error) {
+			log(`Ошибка при обеспечении услуги ${name}: ${error.message}`, "ERROR");
+			return null;
+		}
+	},	async downloadImageAsBase64(url) {
 		if (!url) return null;
 
 		// Если путь относительный, добавляем домен сайта
