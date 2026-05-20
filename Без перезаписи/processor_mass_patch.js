@@ -468,100 +468,6 @@ const syncProcessor = {
 			const barcode = product.barcodes ? product.barcodes[0].code128 || product.barcodes[0].ean13 : null;
 			if (!barcode) return null;
 
-			const getAttr = (name) => {
-				const attr = product.attributes ? product.attributes.find((a) => a.name.toLowerCase() === name.toLowerCase()) : null;
-				if (!attr) return null;
-				return typeof attr.value === 'object' ? attr.value.name : attr.value;
-			};
-
-			const handledAttrNames = [
-				"brand", "isPublished", "packageWeightG", "packWeightG", "protein", "fat", 
-				"carbs", "kcal", "tags", "badges", "unitPriceText", "deliveryType", 
-				"isDefault", "weightG", "volumeMl", "variantKey", "variantValue",
-				"Страна", "country", "Брэнд", "Опубликован", "Тэги", "Бейджи", "packageWeight"
-			];
-
-			// Собираем все остальные атрибуты в rawAttributes (логика из рабочего примера + заглушка group)
-			const rawAttributes = [];
-			if (product.attributes) {
-				product.attributes.forEach((attr) => {
-					if (!handledAttrNames.includes(attr.name)) {
-						rawAttributes.push({ 
-							group: "Общее", 
-							name: attr.name, 
-							value: attr.value 
-						});
-					}
-				});
-			}			
-			// Функция получения страны
-			const fetchCountryName = async () => {
-				if (product.country?.meta?.href) {
-					const countryData = await msClient.getCountryByHref(product.country.meta.href);
-					if (countryData?.name) return countryData.name;
-				}
-				return getAttr("Страна") || getAttr("country");
-			};
-
-			// Формируем полный объект
-			const payload = {
-				title: product.name,
-				barcode: barcode,
-				externalId: product.externalId,
-				sku: product.code,
-				slug: product.article,
-				description: product.description || "",
-				priceCurrent: product.salePrices ? product.salePrices[0].value / 100 : null,
-				priceOld: product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null,
-				brand: getAttr("brand") || getAttr("Брэнд"),
-				isPublished: String(getAttr("isPublished") || getAttr("Опубликован")) === "true",
-
-				weights: {
-					weightG: product.weight ? product.weight * 1000 : null,
-					volumeMl: product.volume || null,
-					packageWeightG: getAttr("packageWeight") ? Number(getAttr("packageWeight")) : null,
-				},
-
-				attributes: {
-					packLengthMm: getAttr("packLengthMm") ? Number(getAttr("packLengthMm")) : null,
-					packWidthMm: getAttr("packWidthMm") ? Number(getAttr("packWidthMm")) : null,
-					packHeightMm: getAttr("packHeightMm") ? Number(getAttr("packHeightMm")) : null,
-				},
-
-				nutrition: {
-					protein: getAttr("protein") ? Number(getAttr("protein")) : null,
-					fat: getAttr("fat") ? Number(getAttr("fat")) : null,
-					carbs: getAttr("carbs") ? Number(getAttr("carbs")) : null,
-					kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
-				},
-
-				tags: (getAttr("tags") || getAttr("Тэги") || "").split(",").map((t) => t.trim()).filter(Boolean),
-				badges: (getAttr("badges") || getAttr("Бейджи") || "").split(",").map((t) => t.trim()).filter(Boolean),
-				rawAttributes: rawAttributes,
-				country: await fetchCountryName(),
-				updatedAt: new Date().toISOString()
-			};
-			return payload;
-		}));
-
-		const filteredUpdates = updates.filter(p => p !== null);
-
-		log(`[PROCESSOR] Подготовлено полных обновлений: ${filteredUpdates.length} шт.`);
-		if (filteredUpdates.length > 0) {
-			await siteRequest("PATCH", "/products/bulk", filteredUpdates);
-			log(`[TO SITE] Массовое обновление (полное) успешно отправлено`);
-		}
-	},
-
-	/* 
-	// СТАРАЯ ЛОГИКА (ЧАСТИЧНОЕ ОБНОВЛЕНИЕ)
-	async syncProductsToSiteBulk_Partial(msProducts, webhookUpdates = []) {
-		if (!msProducts || msProducts.length === 0) return;
-
-		const updates = await Promise.all(msProducts.map(async (product) => {
-			const barcode = product.barcodes ? product.barcodes[0].code128 || product.barcodes[0].ean13 : null;
-			if (!barcode) return null;
-
 			const updateInfo = webhookUpdates.find(u => u.id === product.id);
 			const updatedFields = updateInfo ? updateInfo.updatedFields : [];
 
@@ -616,7 +522,6 @@ const syncProcessor = {
 				"carbs": () => updateNutrition(),
 				"kcal": () => updateNutrition(),
 				// Группа: Варианты (в корень)
-				"variant": () => updateVariants(),
 				"variantKey": () => updateVariants(),
 				"variantValue": () => updateVariants()
 			};
@@ -658,8 +563,7 @@ const syncProcessor = {
 								payload.rawAttributes.push({ name: cleanFieldName, value: attrValue });
 							}
 						}
-					}
-				}
+					}				}
 			} else {
 				// Если список полей пуст (ручной запуск), собираем всё
 				for (const fn of Object.values(knownFieldsMap)) {
@@ -687,9 +591,87 @@ const syncProcessor = {
 			await siteRequest("PATCH", "/products/bulk", filteredUpdates);
 			log(`[TO SITE] Массовое обновление успешно отправлено`);
 		}
+	},	/**
+	 * Полная синхронизация данных товара из МС на сайт
+	 */
+	/* async syncProductToSite(data) {
+		const barcode = data.barcodes ? data.barcodes[0].code128 || data.barcodes[0].ean13 : null;
+		if (!barcode) return;
+
+		const getAttr = (name) => {
+			const attr = data.attributes ? data.attributes.find((a) => a.name.toLowerCase() === name.toLowerCase()) : null;
+			if (!attr) return null;
+			return typeof attr.value === 'object' ? attr.value.name : attr.value;
+		};		const handledAttrNames = [
+			"brand",
+			"isPublished",
+			"packageWeightG",
+			"packWeightG",
+			"protein",
+			"fat",
+			"carbs",
+			"kcal",
+			"tags",
+			"badges",
+			"unitPriceText",
+			"deliveryType",
+			"isDefault",
+			"weightG",
+			"volumeMl",
+			"variantKey",
+			"variantValue"
+		];
+
+		const rawAttributes = [];
+		if (data.attributes) {
+			data.attributes.forEach((attr) => {
+				if (!handledAttrNames.includes(attr.name)) {
+					rawAttributes.push({ name: attr.name, value: attr.value });
+				}
+			});
+		}
+
+		const updatePayload = {
+			title: data.name,
+			barcode: barcode,
+			externalId: data.externalId,
+			sku: data.code,
+			slug: data.article,
+			country: data.country?.name || getAttr("Страна") || getAttr("country") || undefined,
+			priceCurrent: data.salePrices ? data.salePrices[0].value / 100 : null,
+			priceOld: data.salePrices && data.salePrices[1] ? data.salePrices[1].value / 100 : null,
+			description: data.description || "",
+			brand: getAttr("brand"),
+			isPublished: String(getAttr("isPublished")) === "true",
+			stockQty: msClient.calculateAvailableStock(data),
+			unitPriceText: getAttr("unitPriceText"),
+			deliveryType: getAttr("deliveryType"),
+			isDefault: String(getAttr("isDefault")) === "true",
+			variantKey: getAttr("variantKey"),
+			variantValue: getAttr("variantValue"),
+
+			// Веса теперь в корне
+			weightG: getAttr("weightG") ? Number(getAttr("weightG")) : (data.weight ? data.weight * 1000 : null),
+			packWeightG: getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null,
+			packageWeightG: getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null,
+			volumeMl: getAttr("volumeMl") ? Number(getAttr("volumeMl")) : (data.volume || null),
+
+			// Питание остается в объекте nutrition
+			nutrition: {
+				protein: getAttr("protein") ? Number(getAttr("protein")) : null,
+				fat: getAttr("fat") ? Number(getAttr("fat")) : null,
+				carbs: getAttr("carbs") ? Number(getAttr("carbs")) : null,
+				kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
+			},
+
+			tags: getAttr("tags") ? getAttr("tags").split(",").map((t) => t.trim()) : [],
+			badges: getAttr("badges") ? getAttr("badges").split(",").map((t) => t.trim()) : [],
+			rawAttributes: rawAttributes,
+			updatedAt: new Date().toISOString(),
+		};		log(`[TO SITE] Полное обновление товара ${barcode} (Страна: ${updatePayload.country}): ${JSON.stringify(updatePayload)}`);
+		await siteRequest("PATCH", `/products/${barcode}`, updatePayload);
 	}, */
 	/**
-
 	 * Синхронизация контрагента из МС на сайт
 	 */
 	async syncCounterpartyToSite(data) {
@@ -709,12 +691,12 @@ const syncProcessor = {
 			updatedAt: new Date().toISOString(),
 		};
 
-		log(`[TO SITE] Обновление контрагента ${email}: ${JSON.stringify(updatePayload)}`);		try {
+		log(`[TO SITE] Обновление контрагента ${email}`);
+		try {
 			await siteRequest("PATCH", `/customers/${encodeURIComponent(email)}`, updatePayload);
 		} catch (e) {
 			log(`[PROCESSOR] Ошибка отправки контрагента на сайт: ${e.message}`, "ERROR");
 		}
 	},
 };
-
 module.exports = syncProcessor;
