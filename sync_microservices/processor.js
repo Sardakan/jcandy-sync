@@ -252,31 +252,14 @@ const syncProcessor = {
 		const attributesConfig = [
 			{ name: "brand", type: "string", value: data.brand },
 			{ name: "isPublished", type: "boolean", value: data.isPublished },
-			{ name: "packageWeightG", type: "double", value: data.weights?.packageWeightG || data.packageWeightG },
-			{ name: "packWeightG", type: "double", value: data.weights?.packWeightG || data.packWeightG },
-			{ name: "protein", type: "double", value: data.nutrition?.protein },
-			{ name: "fat", type: "double", value: data.nutrition?.fat },
-			{ name: "carbs", type: "double", value: data.nutrition?.carbs },
-			{ name: "kcal", type: "double", value: data.nutrition?.kcal },
-			{ name: "tags", type: "text", value: data.tags?.length > 0 ? data.tags.join(", ") : null },
-			{ name: "badges", type: "text", value: data.badges?.length > 0 ? data.badges.join(", ") : null },
-			{ name: "unitPriceText", type: "string", value: data.unitPriceText },
-			{ name: "deliveryType", type: "string", value: data.deliveryType },
-			{ name: "isDefault", type: "boolean", value: data.isDefault },
-			{ name: "weightG", type: "double", value: data.weights?.weightG || data.weightG || undefined},
-			{ name: "volumeMl", type: "double", value: data.weights?.volumeMl || undefined },
-			{ name: "variantKey", type: "string", value: data.variantKey },
-			{ name: "variantValue", type: "string", value: data.variantValue },
-
 		];
 
-		// Добавляем динамические атрибуты из rawAttributes
+		// Добавляем ТН ВЭД из rawAttributes, если он там есть
 		if (Array.isArray(data.rawAttributes)) {
-			data.rawAttributes.forEach(a => {
-				if (a.value !== null && a.value !== undefined && a.value !== "") {
-					attributesConfig.push({ name: a.name, type: "string", value: a.value });
-				}
-			});
+			const tnved = data.rawAttributes.find(a => a.name === "ТН ВЭД коды ЕАЭС");
+			if (tnved) {
+				attributesConfig.push({ name: "ТН ВЭД коды ЕАЭС", type: "string", value: tnved.value });
+			}
 		}
 
 		const msAttributes = [];
@@ -291,9 +274,6 @@ const syncProcessor = {
 
 		const msProduct = {
 			name: data.title || data.name,
-			externalCode: String(data.externalId || ""),
-			code: String(data.id|| ""),
-			article: data.slug || undefined,
 			description: data.description || "",
 			attributes: msAttributes,
 		};
@@ -329,24 +309,9 @@ const syncProcessor = {
 		}
 		if (salePrices.length > 0) msProduct.salePrices = salePrices;
 		if (countryData) msProduct.country = { meta: countryData.meta };
-		// Изображения
-		const imageUrls = data.imageUrls || (data.media && data.media.images ? data.media.images.map((img) => img.url) : []);
-
-		let shouldUpdateImage = true;
-
-		if (imageUrls.length > 0 && shouldUpdateImage) {
-			try {
-				const imageData = await msClient.downloadImageAsBase64(imageUrls[0]);
-				if (imageData) msProduct.images = [imageData];
-			} catch (imgErr) {
-				console.error(`Ошибка при загрузке изображения для товара ${data.barcode || data.title}:`, imgErr.message);
-				log(`Ошибка при загрузке изображения для товара ${data.barcode || data.title}: ${imgErr.message}`, "WARN");
-			}
-		}
 
 		return msProduct;
 	},
-
 	/**
 	 * Синхронизация товара (одиночная)
 	 */
@@ -363,13 +328,14 @@ const syncProcessor = {
 		const existingProduct = await msClient.findProductByBarcode(data.barcode);
 
 		try {
+			const msProduct = await this.mapToMsProduct(data);
 			if (existingProduct) {
-				log(`[PROCESSOR] Товар уже существует в МС (${data.barcode}). Обновление со стороны сайта ОТКЛЮЧЕНО.`);
-				return;
+				// Используем PUT для полной перезаписи полей
+				await msClient.request("PUT", `/entity/product/${existingProduct.id}`, msProduct);
+				log(`[PROCESSOR] Товар ПОЛНОСТЬЮ ОБНОВЛЕН (PUT) в МС: "${data.title || data.name}" (${data.barcode})`);
 			} else {
-				const msProduct = await this.mapToMsProduct(data);
 				await msClient.request("POST", "/entity/product", msProduct);
-				log(`[PROCESSOR] Товар СОЗДАН: "${data.title || data.name}" (${data.barcode})`);
+				log(`[PROCESSOR] Товар СОЗДАН в МС: "${data.title || data.name}" (${data.barcode})`);
 			}		
 		} catch (err) {
 			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
@@ -378,7 +344,7 @@ const syncProcessor = {
 		}
 	},
 	/**
-	 * Массовое создание товаров (для миграции)
+	 * Массовое создание/обновление товаров (для миграции)
 	 */
 	async massCreateProducts(items) {
 		if (!items || items.length === 0) return;
@@ -386,35 +352,40 @@ const syncProcessor = {
 		const barcodes = items.map((i) => i.barcode).filter(Boolean);
 		const existingRows = await msClient.findProductsByBarcodes(barcodes);
 
-		const existingBarcodes = new Set();
+		// Карта существующих товаров: barcode -> id
+		const existingMap = new Map();
 		existingRows.forEach((row) => {
 			if (row.barcodes) {
-				row.barcodes.forEach((b) => existingBarcodes.add(b.code128 || b.ean13));
+				row.barcodes.forEach((b) => {
+					const code = b.code128 || b.ean13;
+					if (code) existingMap.set(code, row.id);
+				});
 			}
 		});
 
-		const toCreate = [];
-		let skippedCount = 0;
+		let createdCount = 0;
+		let updatedCount = 0;
 
 		for (const item of items) {
-			if (existingBarcodes.has(item.barcode)) {
-				skippedCount++;
-				continue;
-			}
-			const msObj = await this.mapToMsProduct(item);
-			toCreate.push(msObj);
-		}
-
-		log(`[MASS-PROCESSOR] Статистика пачки: Всего ${items.length}, Пропущено (уже есть) ${skippedCount}, К созданию ${toCreate.length}`);
-
-		if (toCreate.length > 0) {
 			try {
-				await msClient.request("POST", "/entity/product", toCreate);
-				log(`[MASS-PROCESSOR] Успешно создано товаров в МС: ${toCreate.length}`);
+				const msObj = await this.mapToMsProduct(item);
+				const existingId = existingMap.get(item.barcode);
+
+				if (existingId) {
+					// Полная перезапись существующего товара
+					await msClient.request("PUT", `/entity/product/${existingId}`, msObj);
+					updatedCount++;
+				} else {
+					// Создание нового
+					await msClient.request("POST", "/entity/product", msObj);
+					createdCount++;
+				}
 			} catch (e) {
-				log(`[MASS-PROCESSOR] Ошибка при массовом создании: ${e.message}`, "ERROR");
+				log(`[MASS-PROCESSOR] Ошибка обработки товара ${item.barcode}: ${e.message}`, "ERROR");
 			}
 		}
+
+		log(`[MASS-PROCESSOR] Миграция завершена: Всего ${items.length}, Создано ${createdCount}, Обновлено (перезаписано) ${updatedCount}`);
 	},
 
 	/**
@@ -477,20 +448,13 @@ const syncProcessor = {
 				return typeof attr.value === 'object' ? attr.value.name : attr.value;
 			};
 
-			const handledAttrNames = [
-				"brand", "isPublished", "packageWeightG", "packWeightG", "protein", "fat", 
-				"carbs", "kcal", "tags", "badges", "unitPriceText", "deliveryType", 
-				"isDefault", "weightG", "volumeMl", "variantKey", "variantValue",
-				"Страна", "country", "Брэнд", "Опубликован", "Тэги", "Бейджи", "packageWeight"
-			];
-
-			// Собираем все остальные атрибуты в rawAttributes (логика из рабочего примера + заглушка group)
+			// Собираем только ТН ВЭД коды ЕАЭС в rawAttributes
 			const rawAttributes = [];
 			if (product.attributes) {
 				product.attributes.forEach((attr) => {
-					if (!handledAttrNames.includes(attr.name)) {
+					if (attr.name === "ТН ВЭД коды ЕАЭС") {
 						rawAttributes.push({ 
-							group: "Общее", 
+							group: "Импорт Ozon", 
 							name: attr.name, 
 							value: attr.value 
 						});
@@ -506,47 +470,21 @@ const syncProcessor = {
 				return getAttr("Страна") || getAttr("country");
 			};
 
-			// Формируем полный объект
+			// Формируем объект только с разрешенными полями
 			const payload = {
 				title: product.name,
 				barcode: barcode,
-				externalId: product.externalId,
-				sku: product.code,
-				slug: product.article,
 				description: product.description || "",
-				priceCurrent: product.salePrices ? product.salePrices[0].value / 100 : null,
-				priceOld: product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null,
 				brand: getAttr("brand") || getAttr("Брэнд"),
 				isPublished: String(getAttr("isPublished") || getAttr("Опубликован")) === "true",
-
-				weights: {
-					weightG: product.weight ? product.weight * 1000 : null,
-					volumeMl: product.volume || null,
-					packageWeightG: getAttr("packageWeight") ? Number(getAttr("packageWeight")) : null,
-				},
-
-				attributes: {
-					packLengthMm: getAttr("packLengthMm") ? Number(getAttr("packLengthMm")) : null,
-					packWidthMm: getAttr("packWidthMm") ? Number(getAttr("packWidthMm")) : null,
-					packHeightMm: getAttr("packHeightMm") ? Number(getAttr("packHeightMm")) : null,
-				},
-
-				nutrition: {
-					protein: getAttr("protein") ? Number(getAttr("protein")) : null,
-					fat: getAttr("fat") ? Number(getAttr("fat")) : null,
-					carbs: getAttr("carbs") ? Number(getAttr("carbs")) : null,
-					kcal: getAttr("kcal") ? Number(getAttr("kcal")) : null,
-				},
-
-				tags: (getAttr("tags") || getAttr("Тэги") || "").split(",").map((t) => t.trim()).filter(Boolean),
-				badges: (getAttr("badges") || getAttr("Бейджи") || "").split(",").map((t) => t.trim()).filter(Boolean),
-				rawAttributes: rawAttributes,
 				country: await fetchCountryName(),
+				priceCurrent: product.salePrices ? product.salePrices[0].value / 100 : null,
+				priceOld: product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null,
+				rawAttributes: rawAttributes,
 				updatedAt: new Date().toISOString()
 			};
 			return payload;
 		}));
-
 		const filteredUpdates = updates.filter(p => p !== null);
 
 		log(`[PROCESSOR] Подготовлено полных обновлений: ${filteredUpdates.length} шт.`);
