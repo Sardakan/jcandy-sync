@@ -142,7 +142,7 @@ const msClient = {
 						value: price * 100,
 						priceType: {
 							meta: {
-								href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c98c9c6d-4619-11f1-0a80-1ba10025a76e`,
+								href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/9946a728-58e1-11f1-0a80-1ca50045e58d`,
 								type: "pricetype",
 								mediaType: "application/json",
 							},
