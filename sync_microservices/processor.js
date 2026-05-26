@@ -110,6 +110,7 @@ const syncProcessor = {
 		// 2. Формирование позиций заказа
 		const positions = [];
 		const items = order.items || (order.barcode ? [{ barcode: order.barcode, quantity: 1, price: order.price }] : []);
+		const isCancelled = order.status === "cancelled";
 
 		for (const item of items) {
 			let msProduct = await msClient.findProductByBarcode(item.barcode);
@@ -130,15 +131,17 @@ const syncProcessor = {
 			}
 
 			if (msProduct) {
+				const qty = item.quantity || 1;
 				positions.push({
-					quantity: item.quantity || 1,
+					quantity: qty,
+					reserve: isCancelled ? 0 : qty,
 					price: (item.price || 0) * 100,
 					vat: 22,
 					assortment: { meta: msProduct.meta },
 				});
 			}
 		}
-		// 3. Добавление платной доставки
+		// 3. Добавление платной доставки		
 		if (order.deliveryPrice && order.deliveryPrice !== 0) {
 			const deliveryServiceName = order.deliveryTariffName || "Доставка";
 			const serviceMeta = await msClient.ensureService(deliveryServiceName, order.deliveryPrice);
@@ -182,7 +185,14 @@ const syncProcessor = {
 			organization: { meta: { href: CONFIG.ORGANIZATION_HREF, type: "organization", mediaType: "application/json" } },
 			agent: { meta: agentMeta },
 			store: { meta: { href: CONFIG.STORE_HREF, type: "store", mediaType: "application/json" } },
-			state: {
+			salesChannel: {
+				meta: {
+					href: CONFIG.SALES_CHANNEL_HREF,
+					type: "saleschannel",
+					mediaType: "application/json",
+				},
+			},
+			state: {				
 				meta: {
 					href: CONFIG.ORDER_STATES[order.status] || CONFIG.ORDER_STATES["pending"],
 					type: "state",
