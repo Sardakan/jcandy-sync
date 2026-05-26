@@ -512,7 +512,8 @@ const syncProcessor = {
 	},
 	/**
 	 * Синхронизация контрагента из МС на сайт
-	 */	async syncCounterpartyToSite(data) {
+	 */	
+	async syncCounterpartyToSite(data) {
 		const email = data.email;
 		if (!email) {
 			log(`[PROCESSOR] Пропуск контрагента ${data.id}: отсутствует email`, "WARN");

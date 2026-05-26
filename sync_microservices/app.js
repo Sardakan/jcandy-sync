@@ -11,7 +11,7 @@ app.use(express.json());
 
 // --- ТЕСТОВЫЕ ДАННЫЕ ДЛЯ МИГРАЦИИ ---
 const TEST_DATA = {
-	products: ["MS-TEST-0001", "MS-TEST-0002", "MS-TEST-0003", "MS-TEST-0004"],
+	products: ["MS-TEST-0001", "MS-TEST-0002", "MS-TEST-0003", "MS-TEST-0004", "OZN367831744"],
 	orders: ["TNJVUUBS", "LG7B6JX3", "QK9AHDTS", "SCWDVN6P", "62XY7U2G"],
 	customers: ["moysklad-customer-test+01@jcandy.local", "moysklad-customer-test+02@jcandy.local"],
 };

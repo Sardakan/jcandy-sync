@@ -43,10 +43,10 @@
 
 ### 1. Синхронизация из БД сайта в МойСклад (PUSH)
 Используется для ручного или автоматического добавления сущностей в очередь синхронизации.
-* `POST /api/v1/external/products` — Добавить товар в очередь (в теле JSON товара)
-* `PATCH /api/v1/external/products/:barcode` — Обновить товар в очереди
-* `POST /api/v1/external/orders` — Добавить заказ в очередь
-* `POST /api/v1/external/counterparties` — Добавить контрагента в очередь
+* `POST https://jcandy-sync.onrender.com/api/v1/external/products` — Добавить товар в очередь (в теле JSON товара)
+* `PATCH https://jcandy-sync.onrender.com/api/v1/external/products/:barcode` — Обновить товар в очереди
+* `POST https://jcandy-sync.onrender.com/api/v1/external/orders` — Добавить заказ в очередь
+* `POST https://jcandy-sync.onrender.com/api/v1/external/counterparties` — Добавить контрагента в очередь
 
 ### 2. Массовая миграция (Тестовые данные)
 * ` POST https://jcandy-sync.onrender.com/api/v1/admin/mass-migrate-products`
