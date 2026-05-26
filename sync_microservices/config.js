@@ -20,6 +20,9 @@ const CONFIG = {
 	ORGANIZATION_HREF: "https://api.moysklad.ru/api/remap/1.2/entity/organization/c98a7ea4-4619-11f1-0a80-1ba10025a766",
 	STORE_HREF: "https://api.moysklad.ru/api/remap/1.2/entity/store/c98c0884-4619-11f1-0a80-1ba10025a769",
 	SERVICE_DELIVERY_HREF: "https://api.moysklad.ru/api/remap/1.2/entity/service/efd419d8-461d-11f1-0a80-1038002646af",
+	// Ссылки на типы цен (МойСклад)
+	PRICE_TYPE_REGULAR: "9946a728-58e1-11f1-0a80-1ca50045e58d", // Цена продажи (сайт)
+	PRICE_TYPE_OLD: "a9b3389f-58e3-11f1-0a80-076a0045984b",     // Старая цена (сайт)
 };
 
 module.exports = CONFIG;

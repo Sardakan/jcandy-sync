@@ -276,6 +276,9 @@ const syncProcessor = {
 			name: data.title || data.name,
 			description: data.description || "",
 			attributes: msAttributes,
+			externalCode: String(data.externalId || ""),
+			code: String(data.id|| ""),
+			article: data.slug || undefined,
 		};
 
 		if (data.barcode) msProduct.barcodes = [{ code128: data.barcode }];
@@ -287,7 +290,7 @@ const syncProcessor = {
 				value: Number(priceCurrent) * 100,
 				priceType: {
 					meta: {
-						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/9946a728-58e1-11f1-0a80-1ca50045e58d`,
+						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/${CONFIG.PRICE_TYPE_REGULAR}`,
 						type: "pricetype",
 						mediaType: "application/json",
 					},
@@ -300,15 +303,28 @@ const syncProcessor = {
 				value: priceOld * 100,
 				priceType: {
 					meta: {
-						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/a9b3389f-58e3-11f1-0a80-076a0045984b`,
+						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/${CONFIG.PRICE_TYPE_OLD}`,
 						type: "pricetype",
 						mediaType: "application/json",
 					},
 				},
 			});
-		}
-		if (salePrices.length > 0) msProduct.salePrices = salePrices;
+		}		if (salePrices.length > 0) msProduct.salePrices = salePrices;
 		if (countryData) msProduct.country = { meta: countryData.meta };
+		// Изображения
+		const imageUrls = data.imageUrls || (data.media && data.media.images ? data.media.images.map((img) => img.url) : []);
+		
+		let shouldUpdateImage = true;
+
+		if (imageUrls.length > 0 && shouldUpdateImage) {
+			try {
+				const imageData = await msClient.downloadImageAsBase64(imageUrls[0]);
+				if (imageData) msProduct.images = [imageData];
+			} catch (imgErr) {
+				console.error(`Ошибка при загрузке изображения для товара ${data.barcode || data.title}:`, imgErr.message);
+				log(`Ошибка при загрузке изображения для товара ${data.barcode || data.title}: ${imgErr.message}`, "WARN");
+			}
+		}
 
 		return msProduct;
 	},
@@ -485,6 +501,7 @@ const syncProcessor = {
 			};
 			return payload;
 		}));
+
 		const filteredUpdates = updates.filter(p => p !== null);
 
 		log(`[PROCESSOR] Подготовлено полных обновлений: ${filteredUpdates.length} шт.`);
@@ -493,147 +510,9 @@ const syncProcessor = {
 			log(`[TO SITE] Массовое обновление (полное) успешно отправлено`);
 		}
 	},
-
-	/* 
-	// СТАРАЯ ЛОГИКА (ЧАСТИЧНОЕ ОБНОВЛЕНИЕ)
-	async syncProductsToSiteBulk_Partial(msProducts, webhookUpdates = []) {
-		if (!msProducts || msProducts.length === 0) return;
-
-		const updates = await Promise.all(msProducts.map(async (product) => {
-			const barcode = product.barcodes ? product.barcodes[0].code128 || product.barcodes[0].ean13 : null;
-			if (!barcode) return null;
-
-			const updateInfo = webhookUpdates.find(u => u.id === product.id);
-			const updatedFields = updateInfo ? updateInfo.updatedFields : [];
-
-			const getAttr = (name) => {
-				const attr = product.attributes ? product.attributes.find((a) => a.name.toLowerCase() === name.toLowerCase()) : null;
-				if (!attr) return null;
-				return typeof attr.value === 'object' ? attr.value.name : attr.value;
-			};
-
-			// Базовый объект
-			const payload = { barcode: barcode };
-
-			// Функция получения страны (с поддержкой ссылок)
-			const fetchCountryName = async () => {
-				if (product.country?.meta?.href) {
-					const countryData = await msClient.getCountryByHref(product.country.meta.href);
-					if (countryData?.name) return countryData.name;
-				}
-				return getAttr("Страна") || getAttr("country");
-			};
-
-			// Список "известных" полей и групп
-			const knownFieldsMap = {
-				"name": () => payload.title = product.name,
-				"article": () => payload.slug = product.article,
-				"code": () => payload.sku = product.code,
-				"description": () => payload.description = product.description,
-				"country": async () => payload.country = await fetchCountryName(),
-				"salePrices": () => {
-					payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null;
-					payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null;
-				},
-				"Цена продажи (сайт)": () => payload.priceCurrent = product.salePrices ? product.salePrices[0].value / 100 : null,
-				"Старая цена (сайт)": () => payload.priceOld = product.salePrices && product.salePrices[1] ? product.salePrices[1].value / 100 : null,
-				"brand": () => payload.brand = getAttr("brand"),
-				"isPublished": () => payload.isPublished = String(getAttr("isPublished")) === "true",
-				"unitPriceText": () => payload.unitPriceText = getAttr("unitPriceText"),
-				"deliveryType": () => payload.deliveryType = getAttr("deliveryType"),
-				"isDefault": () => payload.isDefault = String(getAttr("isDefault")) === "true",
-				"tags": () => payload.tags = getAttr("tags") ? getAttr("tags").split(",").map(t => t.trim()) : [],
-				"badges": () => payload.badges = getAttr("badges") ? getAttr("badges").split(",").map(t => t.trim()) : [],
-				// Группа: Веса (в корень)
-				"weight": () => updateWeights(),
-				"weightG": () => updateWeights(),
-				"packWeightG": () => updateWeights(),
-				"packageWeightG": () => updateWeights(),
-				"volume": () => updateWeights(),
-				"volumeMl": () => updateWeights(),
-				// Группа: Питание (в объект nutrition)
-				"protein": () => updateNutrition(),
-				"fat": () => updateNutrition(),
-				"carbs": () => updateNutrition(),
-				"kcal": () => updateNutrition(),
-				// Группа: Варианты (в корень)
-				"variant": () => updateVariants(),
-				"variantKey": () => updateVariants(),
-				"variantValue": () => updateVariants()
-			};
-
-			const updateWeights = () => {
-				payload.weightG = getAttr("weightG") ? Number(getAttr("weightG")) : (product.weight ? product.weight * 1000 : null);
-				payload.packWeightG = getAttr("packWeightG") ? Number(getAttr("packWeightG")) : null;
-				payload.packageWeightG = getAttr("packageWeightG") ? Number(getAttr("packageWeightG")) : null;
-				payload.volumeMl = getAttr("volumeMl") ? Number(getAttr("volumeMl")) : (product.volume || null);
-			};
-
-			const updateNutrition = () => {
-				if (!payload.nutrition) payload.nutrition = {};
-				payload.nutrition.protein = getAttr("protein") ? Number(getAttr("protein")) : null;
-				payload.nutrition.fat = getAttr("fat") ? Number(getAttr("fat")) : null;
-				payload.nutrition.carbs = getAttr("carbs") ? Number(getAttr("carbs")) : null;
-				payload.nutrition.kcal = getAttr("kcal") ? Number(getAttr("kcal")) : null;
-			};
-
-			const updateVariants = () => {
-				payload.variantKey = getAttr("variantKey");
-				payload.variantValue = getAttr("variantValue");
-			};
-
-			if (updatedFields.length > 0) {
-				for (const f of updatedFields) {
-					const cleanFieldName = f.split(" (")[0];
-					const handler = knownFieldsMap[cleanFieldName] || knownFieldsMap[f];
-					
-					if (handler) {
-						await handler();
-					} else {
-						// Если поля нет в списке известных — отправляем в rawAttributes через getAttr
-						const attrValue = getAttr(cleanFieldName) || getAttr(f);
-						if (attrValue !== null && attrValue !== undefined) {
-							if (!payload.rawAttributes) payload.rawAttributes = [];
-							// Избегаем дубликатов
-							if (!payload.rawAttributes.find(ra => ra.name === cleanFieldName)) {
-								payload.rawAttributes.push({ name: cleanFieldName, value: attrValue });
-							}
-						}
-					}
-				}
-			} else {
-				// Если список полей пуст (ручной запуск), собираем всё
-				for (const fn of Object.values(knownFieldsMap)) {
-					await fn();
-				}
-				// И все остальные атрибуты в rawAttributes
-				const handledNames = Object.keys(knownFieldsMap);
-				product.attributes?.forEach(attr => {
-					if (!handledNames.includes(attr.name)) {
-						if (!payload.rawAttributes) payload.rawAttributes = [];
-						payload.rawAttributes.push({ name: attr.name, value: attr.value });
-					}
-				});
-				payload.stockQty = msClient.calculateAvailableStock(product);
-			}
-
-			payload.updatedAt = new Date().toISOString();
-			return payload;
-		}));
-
-		const filteredUpdates = updates.filter(p => p && Object.keys(p).length > 2);
-
-		log(`[PROCESSOR] Подготовлено обновлений для отправки: ${filteredUpdates.length} шт.`);
-		if (filteredUpdates.length > 0) {
-			await siteRequest("PATCH", "/products/bulk", filteredUpdates);
-			log(`[TO SITE] Массовое обновление успешно отправлено`);
-		}
-	}, */
 	/**
-
 	 * Синхронизация контрагента из МС на сайт
-	 */
-	async syncCounterpartyToSite(data) {
+	 */	async syncCounterpartyToSite(data) {
 		const email = data.email;
 		if (!email) {
 			log(`[PROCESSOR] Пропуск контрагента ${data.id}: отсутствует email`, "WARN");
