@@ -90,17 +90,17 @@ const msClient = {
 	},
 	async getCustomEntityValue(entityName, valueName) {
 		try {
-			// 1. Получаем список всех пользовательских справочников
-			const metadata = await this.request("GET", "/entity/customentity");
-			const entity = metadata.data.rows.find(e => e.name === entityName);
+			// 1. Получаем список всех определений пользовательских справочников
+			const metadata = await this.request("GET", "/entity/customentity/metadata");
+			const entity = metadata.data.customEntities ? metadata.data.customEntities.find(e => e.name === entityName) : null;
 			
 			if (!entity) {
-				log(`Справочник "${entityName}" не найден в МС`, "WARN");
+				log(`Справочник "${entityName}" не найден в МС. Убедитесь, что он создан в Настройках.`, "WARN");
 				return null;
 			}
 
-			// 2. Ищем конкретное значение в этом справочнике по имени
 			const entityId = entity.meta.href.split("/").pop();
+			// 2. Ищем конкретное значение в этом справочнике по имени
 			const search = await this.request("GET", `/entity/customentity/${entityId}?filter=name=${encodeURIComponent(valueName)}`);
 			
 			if (search.data.rows && search.data.rows.length > 0) {
@@ -118,8 +118,7 @@ const msClient = {
 			log(`Ошибка при работе со справочником ${entityName}: ${error.message}`, "ERROR");
 			return null;
 		}
-	},	
-	async getCounterparty(email) {		
+	},	async getCounterparty(email) {		
 		if (!email) return null;
 		try {
 			const response = await this.request("GET", `/entity/counterparty?filter=email=${encodeURIComponent(email)}`);
