@@ -225,10 +225,11 @@ const syncProcessor = {
 			if (order.deliveryProvider === "cdek") {
 				log(`[PROCESSOR] Обнаружена доставка СДЭК для заказа ${order.id}. Запрашиваю этикетку...`);
 				try {
-					const barcodeResponse = await siteRequest("GET", `/orders/${order.id}/barcode`);
-					const barcodeData = barcodeResponse.data;
-
-					if (barcodeData && barcodeData.base64) {
+					// Запрашиваем этикетку, подавляя вывод ошибок в консоль, если это просто отсутствие документа
+					const barcodeResponse = await siteRequest("GET", `/orders/${order.id}/barcode`).catch(() => null);
+					
+					if (barcodeResponse && barcodeResponse.data && barcodeResponse.data.base64) {
+						const barcodeData = barcodeResponse.data;
 						log(`[PROCESSOR] Этикетка получена (Base64). Загружаю в МС как файл: ${barcodeData.fileName}`);
 						
 						await msClient.request("POST", `/entity/customerorder/${orderResult.id}/files`, {
@@ -238,13 +239,13 @@ const syncProcessor = {
 						
 						log(`[PROCESSOR] Этикетка СДЭК успешно прикреплена к заказу в МС`);
 					} else {
-						log(`[PROCESSOR] API не вернуло base64 для этикетки СДЭК заказа ${order.id}`, "WARN");
+						log(`[PROCESSOR] Этикетка СДЭК для заказа ${order.id} пока не доступна (пропуск)`, "WARN");
 					}
 				} catch (e) {
-					log(`[PROCESSOR] Ошибка при получении/загрузке этикетки СДЭК: ${e.message}`, "WARN");
+					// Здесь ловим только критические ошибки самой загрузки в МС
+					log(`[PROCESSOR] Не удалось прикрепить этикетку СДЭК: ${e.message}`, "WARN");
 				}
-			}
-			return orderResult;		
+			}			return orderResult;		
 		} catch (err) {
 			const errorDetail = err.response ? JSON.stringify(err.response.data, null, 2) : err.message;
 			log(`[PROCESSOR] Ошибка при создании заказа: ${errorDetail}`, "ERROR");
@@ -259,11 +260,18 @@ const syncProcessor = {
 		const data = siteData.data || siteData.product || siteData;
 		const countryData = data.country ? await msClient.getCountry(data.country) : null;
 
+		// Обработка справочника "Магазин"
+		let storeAttrValue = null;
+		const storeName = data.store?.name;
+		if (storeName) {
+			storeAttrValue = await msClient.getCustomEntityValue("Магазин", storeName);
+		}
+
 		const attributesConfig = [
 			{ name: "brand", type: "string", value: data.brand },
 			{ name: "isPublished", type: "boolean", value: data.isPublished },
+			{ name: "Магазин", type: "customentity", value: storeAttrValue },
 		];
-
 		// Добавляем ТН ВЭД из rawAttributes, если он там есть
 		if (Array.isArray(data.rawAttributes)) {
 			const tnved = data.rawAttributes.find(a => a.name === "ТН ВЭД коды ЕАЭС");
