@@ -91,11 +91,11 @@ const msClient = {
 	async getCustomEntityValue(entityName, valueName) {
 		try {
 			// 1. Получаем список всех определений пользовательских справочников
-			const metadata = await this.request("GET", "/entity/customentity/metadata");
-			const entity = metadata.data.customEntities ? metadata.data.customEntities.find(e => e.name === entityName) : null;
+			const response = await this.request("GET", "/entity/customentity");
+			const entity = response.data.rows ? response.data.rows.find(e => e.name === entityName) : null;
 			
 			if (!entity) {
-				log(`Справочник "${entityName}" не найден в МС. Убедитесь, что он создан в Настройках.`, "WARN");
+				log(`Справочник "${entityName}" не найден в МС. Проверьте название в Настройках.`, "WARN");
 				return null;
 			}
 
@@ -118,7 +118,29 @@ const msClient = {
 			log(`Ошибка при работе со справочником ${entityName}: ${error.message}`, "ERROR");
 			return null;
 		}
-	},	async getCounterparty(email) {		
+	},
+	async getCountry(name) {
+		if (!name) return null;
+		try {
+			const response = await this.request("GET", `/entity/country?filter=name=${encodeURIComponent(name)}`);
+			return response.data.rows && response.data.rows.length > 0 ? response.data.rows[0] : null;
+		} catch (error) {
+			log(`Ошибка при поиске страны ${name}: ${error.message}`, "ERROR");
+			return null;
+		}
+	},
+	async getCountryByHref(href) {
+		if (!href) return null;
+		try {
+			const apiPath = href.replace(CONFIG.MS_API_BASE, "");
+			const response = await this.request("GET", apiPath);
+			return response.data;
+		} catch (error) {
+			log(`Ошибка при получении страны по ссылке: ${error.message}`, "ERROR");
+			return null;
+		}
+	},
+	async getCounterparty(email) {
 		if (!email) return null;
 		try {
 			const response = await this.request("GET", `/entity/counterparty?filter=email=${encodeURIComponent(email)}`);
@@ -128,7 +150,7 @@ const msClient = {
 			return null;
 		}
 	},
-	async findOrderByExternalCode(externalCode) {
+	async findOrderByExternalCode(externalCode) {		
 		if (!externalCode) return null;
 		try {
 			const response = await this.request("GET", `/entity/customerorder?filter=externalCode=${externalCode}`);
