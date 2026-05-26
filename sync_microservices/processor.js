@@ -287,7 +287,7 @@ const syncProcessor = {
 				value: Number(priceCurrent) * 100,
 				priceType: {
 					meta: {
-						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c98c9c6d-4619-11f1-0a80-1ba10025a76e`,
+						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/9946a728-58e1-11f1-0a80-1ca50045e58d`,
 						type: "pricetype",
 						mediaType: "application/json",
 					},
@@ -300,7 +300,7 @@ const syncProcessor = {
 				value: priceOld * 100,
 				priceType: {
 					meta: {
-						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/c25d77ef-46f0-11f1-0a80-143b0004ba6d`,
+						href: `${CONFIG.MS_API_BASE}/context/companysettings/pricetype/a9b3389f-58e3-11f1-0a80-076a0045984b`,
 						type: "pricetype",
 						mediaType: "application/json",
 					},
