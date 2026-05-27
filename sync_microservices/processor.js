@@ -285,11 +285,16 @@ const syncProcessor = {
 			if (attr.value === null || attr.value === undefined || attr.value === "") continue;
 			const meta = await msClient.ensureAttribute(attr.name, attr.type);
 			if (meta) {
-				const finalValue = attr.type === "double" || attr.type === "number" ? Number(attr.value) : attr.value;
+				let finalValue;
+				if (attr.type === "customentity") {
+					// Для справочников значением должен быть объект с meta элемента справочника
+					finalValue = { meta: attr.value };
+				} else {
+					finalValue = attr.type === "double" || attr.type === "number" ? Number(attr.value) : attr.value;
+				}
 				msAttributes.push({ meta, value: finalValue });
 			}
 		}
-
 		const msProduct = {
 			name: data.title || data.name,
 			description: data.description || "",
