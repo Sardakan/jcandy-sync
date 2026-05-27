@@ -121,6 +121,7 @@ async function handleWebhook(req, res) {
 				updatedFields: e.updatedFields || []
 			}));
 
+		/* 
 		// 1. Массовая обработка обновлений карточек товаров
 		if (productUpdates.length > 0) {
 			log(`[MS WEBHOOK] Начинаю загрузку данных для ${productUpdates.length} товаров из МС...`);
@@ -133,7 +134,7 @@ async function handleWebhook(req, res) {
 				.then(() => log(`[MS WEBHOOK] Массовая синхронизация успешно завершена`))
 				.catch(e => log(`[MS WEBHOOK] КРИТИЧЕСКАЯ ОШИБКА массовой синхронизации: ${e.message}`, "ERROR"));
 		}
-		for (const event of events) {
+		*/		for (const event of events) {
 			const type = event.meta.type;
 
 			// 2. Обработка остатков (только документы)
