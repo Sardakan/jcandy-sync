@@ -91,15 +91,15 @@ const msClient = {
 	async getCustomEntityValue(entityName, valueName) {
 		try {
 			// 1. Получаем список всех определений пользовательских справочников
-			const response = await this.request("GET", "/entity/customentity");
-			const entity = response.data.rows ? response.data.rows.find(e => e.name === entityName) : null;
+			const response = await this.request("GET", "/context/companysettings/metadata");
+			const entity = response.data.customEntities ? response.data.customEntities.find(e => e.name === entityName) : null;
 			
 			if (!entity) {
 				log(`Справочник "${entityName}" не найден в МС. Проверьте название в Настройках.`, "WARN");
 				return null;
 			}
 
-			const entityId = entity.meta.href.split("/").pop();
+			const entityId = entity.id;
 			// 2. Ищем конкретное значение в этом справочнике по имени
 			const search = await this.request("GET", `/entity/customentity/${entityId}?filter=name=${encodeURIComponent(valueName)}`);
 			
