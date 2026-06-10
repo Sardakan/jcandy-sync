@@ -263,7 +263,7 @@ const syncProcessor = {
 		// 1. Страна
 		let countryData = null;
 		if (data.country) {
-			// log(`[DEBUG-MAP] ${barcode}: поиск страны ${data.country}`);
+			log(`[DEBUG-MAP] ${barcode}: поиск страны ${data.country}`);
 			countryData = await msClient.getCountry(data.country);
 		}
 
@@ -271,10 +271,9 @@ const syncProcessor = {
 		let storeAttrValue = null;
 		const storeName = data.store?.name;
 		if (storeName) {
-			// log(`[DEBUG-MAP] ${barcode}: поиск магазина ${storeName}`);
+			log(`[DEBUG-MAP] ${barcode}: поиск магазина ${storeName}`);
 			storeAttrValue = await msClient.getCustomEntityValue("Магазин", storeName);
 		}
-
 		const attributesConfig = [
 			{ name: "brand", type: "string", value: data.brand },
 			{ name: "isPublished", type: "boolean", value: data.isPublished },
