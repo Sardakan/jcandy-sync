@@ -460,7 +460,7 @@ const syncProcessor = {
 
 		let createdCount = 0;
 		let updatedCount = 0;
-		const batchSize = 10;
+		const batchSize = 5; // Уменьшаем до 5, чтобы избежать таймаутов из-за тяжелых картинок
 
 		for (let i = 0; i < items.length; i += batchSize) {
 			const batch = items.slice(i, i + batchSize);
