@@ -5,6 +5,35 @@ const { siteRequest } = require("./siteApi");
 const queue = require("./queue");
 
 const syncProcessor = {
+	// Кэш для метаданных, чтобы не запрашивать их для каждого товара
+	metadataCache: {
+		attributes: {},
+		stores: {}
+	},
+
+	/**
+	 * Предварительная загрузка всех необходимых метаданных
+	 */
+	async ensureAllMetadata() {
+		log("[PROCESSOR] Инициализация метаданных (атрибуты и справочники)...");
+		const requiredAttributes = [
+			{ name: "brand", type: "string" },
+			{ name: "isPublished", type: "boolean" },
+			{ name: "Магазин", type: "customentity" },
+			{ name: "ТН ВЭД коды ЕАЭС", type: "string" }
+		];
+
+		for (const attr of requiredAttributes) {
+			if (!this.metadataCache.attributes[attr.name]) {
+				const meta = await msClient.ensureAttribute(attr.name, attr.type);
+				if (meta) {
+					this.metadataCache.attributes[attr.name] = meta;
+					log(`[PROCESSOR] Метаданные атрибута "${attr.name}" получены`);
+				}
+			}
+		}
+	},
+
 	/**
 	 * Вспомогательная функция для "распаковки" данных из разных форматов API
 	 */
@@ -268,38 +297,50 @@ const syncProcessor = {
 			countryData = await msClient.getCountry(data.country);
 		}
 
-		// 2. Магазин
+		// 2. Магазин (с кэшированием в metadataCache)
 		let storeAttrValue = null;
 		const storeName = data.store?.name;
 		if (storeName) {
-			log(`[DEBUG-MAP] ${barcode}: поиск магазина ${storeName}`);
-			storeAttrValue = await msClient.getCustomEntityValue("Магазин", storeName);
+			if (this.metadataCache.stores[storeName]) {
+				storeAttrValue = this.metadataCache.stores[storeName];
+			} else {
+				log(`[DEBUG-MAP] ${barcode}: поиск магазина ${storeName}`);
+				storeAttrValue = await msClient.getCustomEntityValue("Магазин", storeName);
+				if (storeAttrValue) this.metadataCache.stores[storeName] = storeAttrValue;
+			}
 		}
+
 		const attributesConfig = [
-			{ name: "brand", type: "string", value: data.brand },
-			{ name: "isPublished", type: "boolean", value: data.isPublished },
-			{ name: "Магазин", type: "customentity", value: storeAttrValue },
+			{ name: "brand", value: data.brand },
+			{ name: "isPublished", value: data.isPublished },
+			{ name: "Магазин", value: storeAttrValue, isCustomEntity: true },
 		];
 
 		// 3. ТН ВЭД
 		if (Array.isArray(data.rawAttributes)) {
 			const tnved = data.rawAttributes.find(a => a.name === "ТН ВЭД коды ЕАЭС");
 			if (tnved) {
-				attributesConfig.push({ name: "ТН ВЭД коды ЕАЭС", type: "string", value: tnved.value });
+				attributesConfig.push({ name: "ТН ВЭД коды ЕАЭС", value: tnved.value });
 			}
 		}
 
-		// 4. Атрибуты (ensureAttribute)
+		// 4. Атрибуты (используем metadataCache вместо ensureAttribute)
 		const msAttributes = [];
 		for (const attr of attributesConfig) {
 			if (attr.value === null || attr.value === undefined || attr.value === "") continue;
-			const meta = await msClient.ensureAttribute(attr.name, attr.type);
+			
+			const meta = this.metadataCache.attributes[attr.name];
 			if (meta) {
 				let finalValue;
-				if (attr.type === "customentity") {
+				if (attr.isCustomEntity) {
 					finalValue = { meta: attr.value };
 				} else {
-					finalValue = attr.type === "double" || attr.type === "number" ? Number(attr.value) : attr.value;
+					// Приведение типов
+					if (attr.name === "isPublished") {
+						finalValue = String(attr.value) === "true";
+					} else {
+						finalValue = attr.value;
+					}
 				}
 				msAttributes.push({ meta, value: finalValue });
 			}
@@ -401,6 +442,9 @@ const syncProcessor = {
 
 		log(`[MASS-PROCESSOR] Начинаю пакетную обработку ${items.length} товаров...`);
 		
+		// Инициализируем метаданные один раз перед началом миграции
+		await this.ensureAllMetadata();
+		
 		const barcodes = items.map((i) => i.barcode).filter(Boolean);
 		const existingRows = await msClient.findProductsByBarcodes(barcodes);
 
@@ -426,6 +470,7 @@ const syncProcessor = {
 			// 1. Параллельный маппинг (подготовка данных и загрузка картинок)
 			const mappedResults = await Promise.all(batch.map(async (item) => {
 				try {
+					log(`[MASS-PROCESSOR] Маппинг товара: ${item.barcode} (${item.title || 'no title'})`);
 					const msObj = await this.mapToMsProduct(item);
 					const existingId = existingMap.get(item.barcode);
 					if (existingId) msObj.id = existingId;
