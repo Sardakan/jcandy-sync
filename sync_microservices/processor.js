@@ -426,13 +426,15 @@ const syncProcessor = {
 
 				if (existingId) {
 					// Полная перезапись существующего товара
+					log(`[MASS-PROCESSOR] Обновление товара в МС: ${item.barcode}`);
 					await msClient.request("PUT", `/entity/product/${existingId}`, msObj);
 					updatedCount++;
 				} else {
 					// Создание нового
+					log(`[MASS-PROCESSOR] Создание нового товара в МС: ${item.barcode}`);
 					await msClient.request("POST", "/entity/product", msObj);
 					createdCount++;
-				}
+				}			
 			} catch (e) {
 				log(`[MASS-PROCESSOR] Ошибка обработки товара ${item.barcode}: ${e.message}`, "ERROR");
 			}

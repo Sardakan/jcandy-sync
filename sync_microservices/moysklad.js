@@ -5,12 +5,12 @@ const log = require("./logger");
 
 const msApiClient = axios.create({
 	baseURL: CONFIG.MS_API_BASE,
+	timeout: 30000, // Таймаут 30 секунд для всех запросов к МС
 	headers: {
 		Authorization: `Bearer ${CONFIG.MS_API_Token}`,
 		"Content-Type": "application/json",
 	},
 });
-
 const msClient = {
 	cache: {}, // Кэширование метаданных
 	customEntityCache: {}, // Кэш для справочников и их значений
