@@ -258,12 +258,20 @@ const syncProcessor = {
 	 */
 	async mapToMsProduct(siteData) {
 		const data = siteData.data || siteData.product || siteData;
-		const countryData = data.country ? await msClient.getCountry(data.country) : null;
+		const barcode = data.barcode || "no-barcode";
+		
+		// 1. Страна
+		let countryData = null;
+		if (data.country) {
+			// log(`[DEBUG-MAP] ${barcode}: поиск страны ${data.country}`);
+			countryData = await msClient.getCountry(data.country);
+		}
 
-		// Обработка справочника "Магазин"
+		// 2. Магазин
 		let storeAttrValue = null;
 		const storeName = data.store?.name;
 		if (storeName) {
+			// log(`[DEBUG-MAP] ${barcode}: поиск магазина ${storeName}`);
 			storeAttrValue = await msClient.getCustomEntityValue("Магазин", storeName);
 		}
 
@@ -272,7 +280,8 @@ const syncProcessor = {
 			{ name: "isPublished", type: "boolean", value: data.isPublished },
 			{ name: "Магазин", type: "customentity", value: storeAttrValue },
 		];
-		// Добавляем ТН ВЭД из rawAttributes, если он там есть
+
+		// 3. ТН ВЭД
 		if (Array.isArray(data.rawAttributes)) {
 			const tnved = data.rawAttributes.find(a => a.name === "ТН ВЭД коды ЕАЭС");
 			if (tnved) {
@@ -280,6 +289,7 @@ const syncProcessor = {
 			}
 		}
 
+		// 4. Атрибуты (ensureAttribute)
 		const msAttributes = [];
 		for (const attr of attributesConfig) {
 			if (attr.value === null || attr.value === undefined || attr.value === "") continue;
@@ -287,7 +297,6 @@ const syncProcessor = {
 			if (meta) {
 				let finalValue;
 				if (attr.type === "customentity") {
-					// Для справочников значением должен быть объект с meta элемента справочника
 					finalValue = { meta: attr.value };
 				} else {
 					finalValue = attr.type === "double" || attr.type === "number" ? Number(attr.value) : attr.value;
@@ -295,17 +304,18 @@ const syncProcessor = {
 				msAttributes.push({ meta, value: finalValue });
 			}
 		}
+
 		const msProduct = {
 			name: data.title || data.name,
 			description: data.description || "",
 			attributes: msAttributes,
 			externalCode: String(data.externalId || ""),
-			code: String(data.id|| ""),
 			article: data.slug || undefined,
 		};
 
 		if (data.barcode) msProduct.barcodes = [{ code128: data.barcode }];
 
+		// 5. Цены
 		const salePrices = [];
 		const priceCurrent = data.priceCurrent ?? data.pricing?.priceCurrent;
 		if (priceCurrent) {
@@ -332,20 +342,21 @@ const syncProcessor = {
 					},
 				},
 			});
-		}		if (salePrices.length > 0) msProduct.salePrices = salePrices;
+		}
+		if (salePrices.length > 0) msProduct.salePrices = salePrices;
 		if (countryData) msProduct.country = { meta: countryData.meta };
-		// Изображения
+
+		// 6. Изображения (Самое вероятное место зависания)
 		const imageUrls = data.imageUrls || (data.media && data.media.images ? data.media.images.map((img) => img.url) : []);
 		
-		let shouldUpdateImage = true;
-
-		if (imageUrls.length > 0 && shouldUpdateImage) {
+		if (imageUrls.length > 0) {
 			try {
+				log(`[DEBUG-MAP] ${barcode}: загрузка изображения...`);
 				const imageData = await msClient.downloadImageAsBase64(imageUrls[0]);
 				if (imageData) msProduct.images = [imageData];
+				log(`[DEBUG-MAP] ${barcode}: изображение загружено`);
 			} catch (imgErr) {
-				console.error(`Ошибка при загрузке изображения для товара ${data.barcode || data.title}:`, imgErr.message);
-				log(`Ошибка при загрузке изображения для товара ${data.barcode || data.title}: ${imgErr.message}`, "WARN");
+				log(`[DEBUG-MAP] ${barcode}: ошибка изображения: ${imgErr.message}`, "WARN");
 			}
 		}
 
