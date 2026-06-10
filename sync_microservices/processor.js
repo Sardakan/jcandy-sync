@@ -404,9 +404,12 @@ const syncProcessor = {
 
 		let createdCount = 0;
 		let updatedCount = 0;
+		let currentIdx = 0;
 
 		for (const item of items) {
+			currentIdx++;
 			try {
+				log(`[MASS-PROCESSOR] Обработка ${currentIdx}/${items.length}: ${item.barcode} (${item.title})`);
 				const msObj = await this.mapToMsProduct(item);
 				const existingId = existingMap.get(item.barcode);
 
@@ -423,7 +426,6 @@ const syncProcessor = {
 				log(`[MASS-PROCESSOR] Ошибка обработки товара ${item.barcode}: ${e.message}`, "ERROR");
 			}
 		}
-
 		log(`[MASS-PROCESSOR] Миграция завершена: Всего ${items.length}, Создано ${createdCount}, Обновлено (перезаписано) ${updatedCount}`);
 	},
 

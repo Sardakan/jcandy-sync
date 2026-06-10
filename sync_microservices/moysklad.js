@@ -13,8 +13,9 @@ const msApiClient = axios.create({
 
 const msClient = {
 	cache: {}, // Кэширование метаданных
+	customEntityCache: {}, // Кэш для справочников и их значений
 
-	async request(method, endpoint, data = null) {
+	async request(method, endpoint, data = null) {		
 		try {
 			return await msApiClient({ method, url: endpoint, data });
 		} catch (err) {
@@ -89,6 +90,9 @@ const msClient = {
 		}
 	},
 	async getCustomEntityValue(entityName, valueName) {
+		const cacheKey = `${entityName}:${valueName}`;
+		if (this.customEntityCache[cacheKey]) return this.customEntityCache[cacheKey];
+
 		try {
 			// 1. Получаем список всех определений пользовательских справочников
 			const response = await this.request("GET", "/context/companysettings/metadata");
@@ -104,7 +108,8 @@ const msClient = {
 			const search = await this.request("GET", `/entity/customentity/${entityId}?filter=name=${encodeURIComponent(valueName)}`);
 			
 			if (search.data.rows && search.data.rows.length > 0) {
-				return search.data.rows[0].meta;
+				this.customEntityCache[cacheKey] = search.data.rows[0].meta;
+				return this.customEntityCache[cacheKey];
 			}
 			
 			// 3. Если значение не найдено — создаем его
@@ -113,12 +118,13 @@ const msClient = {
 				name: valueName
 			});
 			
-			return createResponse.data.meta;
+			this.customEntityCache[cacheKey] = createResponse.data.meta;
+			return this.customEntityCache[cacheKey];
 		} catch (error) {
 			log(`Ошибка при работе со справочником ${entityName}: ${error.message}`, "ERROR");
 			return null;
 		}
-	},
+	},	
 	async getCountry(name) {
 		if (!name) return null;
 		try {
