@@ -134,7 +134,8 @@ async function handleWebhook(req, res) {
 				.then(() => log(`[MS WEBHOOK] Массовая синхронизация успешно завершена`))
 				.catch(e => log(`[MS WEBHOOK] КРИТИЧЕСКАЯ ОШИБКА массовой синхронизации: ${e.message}`, "ERROR"));
 		}
-		*/		for (const event of events) {
+		*/		
+		for (const event of events) {
 			const type = event.meta.type;
 
 			// 2. Обработка остатков (только документы)
