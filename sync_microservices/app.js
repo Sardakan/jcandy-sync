@@ -278,10 +278,10 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 			batch_size: limit,
 		});
 
-		// 2. Запускаем фоновый процесс
-		(async () => {
+		// 2. Запускаем фоновый процесс через setTimeout, чтобы не блокировать ответ
+		setTimeout(async () => {
 			try {
-				log(`[MIGRATION-BACKGROUND] Фоновый процесс запущен. Офсет: ${offset}`);
+				log(`[MIGRATION-BACKGROUND] Фоновый процесс начал работу. Офсет: ${offset}`);
 				let currentOffset = offset;
 				let processedInThisRun = 0;
 				let currentItems = items;
@@ -316,8 +316,8 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 				log(`[MIGRATION-CRITICAL] Ошибка в фоновом процессе: ${err.message}`, "ERROR");
 				console.error(err);
 			}
-		})();	} catch (e) {
-		log(`[MIGRATION] Ошибка при запуске миграции: ${e.message}`, "ERROR");
+		}, 0);
+	} catch (e) {		log(`[MIGRATION] Ошибка при запуске миграции: ${e.message}`, "ERROR");
 		if (!res.headersSent) res.status(500).json({ error: e.message });
 	}
 });
