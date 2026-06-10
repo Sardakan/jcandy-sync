@@ -53,11 +53,13 @@ const msClient = {
 		}
 	},
 	async findProductsByBarcodes(barcodes) {
-		const validBarcodes = (barcodes || []).filter((b) => b && String(b).trim() !== "");
+		const validBarcodes = (barcodes || [])
+			.map(b => String(b || "").trim())
+			.filter(b => b !== "");
 		if (validBarcodes.length === 0) return [];
 
 		try {
-			const filterParts = validBarcodes.map((b) => `barcode=${String(b).trim()}`);
+			const filterParts = validBarcodes.map((b) => `barcode=${b}`);
 			const filterString = filterParts.join(";");
 			
 			log(`[DEBUG] Фильтр для МС: ${filterString}`); // Раскомментируйте для глубокой отладки
