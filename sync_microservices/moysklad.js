@@ -238,10 +238,12 @@ const msClient = {
 		}
 
 		try {
-			const response = await axios.get(fullUrl, { responseType: "arraybuffer" });
+			const response = await axios.get(fullUrl, { 
+				responseType: "arraybuffer",
+				timeout: 10000 // Таймаут 10 секунд
+			});
 
-			// Проверка на SVG (МойСклад поддерживает только растровые форматы: JPG, PNG, GIF)
-			const contentStart = response.data.slice(0, 100).toString().toLowerCase();
+			// Проверка на SVG (МойСклад поддерживает только растровые форматы: JPG, PNG, GIF)			const contentStart = response.data.slice(0, 100).toString().toLowerCase();
 			if (contentStart.includes("<svg") || fullUrl.toLowerCase().includes(".svg")) {
 				log(`[WARN] Формат SVG не поддерживается МоимСкладом (пропуск): ${fullUrl}`, "WARN");
 				return null;
