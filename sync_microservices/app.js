@@ -301,15 +301,17 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 
 					// Загружаем следующую пачку
 					try {
+						log(`[MIGRATION] Запрос следующей пачки с сайта: offset=${currentOffset}...`);
 						const nextResponse = await siteRequest("GET", `/products?limit=${limit}&offset=${currentOffset}`);
 						currentItems = nextResponse.data || (Array.isArray(nextResponse) ? nextResponse : []);
+						log(`[MIGRATION] Пачка получена, количество: ${currentItems.length}`);
 					} catch (err) {
 						log(`[MIGRATION] Ошибка при загрузке пачки (offset ${currentOffset}): ${err.message}`, "ERROR");
 						break;
 					}
 
-					// Пауза 300мс, чтобы не перегружать API сайта
-					await new Promise((resolve) => setTimeout(resolve, 300));
+					// Пауза 1000мс (1 сек), чтобы Render и API сайта успели "остыть"
+					await new Promise((resolve) => setTimeout(resolve, 1000));
 				}
 				log(`[MIGRATION] Массовая миграция завершена. Всего обработано: ${processedInThisRun}`);
 			} catch (err) {

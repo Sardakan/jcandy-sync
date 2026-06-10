@@ -466,19 +466,20 @@ const syncProcessor = {
 			const batch = items.slice(i, i + batchSize);
 			log(`[MASS-PROCESSOR] Обработка под-пачки ${i / batchSize + 1} (товары ${i + 1}-${Math.min(i + batchSize, items.length)})`);
 
-			// 1. Параллельный маппинг (подготовка данных и загрузка картинок)
-			const mappedResults = await Promise.all(batch.map(async (item) => {
+			// 1. Последовательный маппинг (экономим память на Render Free Tier)
+			const mappedResults = [];
+			for (const item of batch) {
 				try {
 					log(`[MASS-PROCESSOR] Маппинг товара: ${item.barcode} (${item.title || 'no title'})`);
 					const msObj = await this.mapToMsProduct(item);
 					const existingId = existingMap.get(item.barcode);
 					if (existingId) msObj.id = existingId;
-					return { success: true, data: msObj, original: item };
+					mappedResults.push({ success: true, data: msObj, original: item });
 				} catch (err) {
 					log(`[MASS-PROCESSOR] Ошибка маппинга товара ${item.barcode}: ${err.message}`, "ERROR");
-					return { success: false, error: err.message, original: item };
+					mappedResults.push({ success: false, error: err.message, original: item });
 				}
-			}));
+			}
 
 			const toCreate = mappedResults.filter(r => r.success && !r.data.id).map(r => r.data);
 			const toUpdate = mappedResults.filter(r => r.success && r.data.id).map(r => r.data);
