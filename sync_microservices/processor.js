@@ -2,7 +2,6 @@ const CONFIG = require("./config");
 const log = require("./logger");
 const msClient = require("./moysklad");
 const { siteRequest } = require("./siteApi");
-const queue = require("./queue");
 
 const syncProcessor = {
 	// Кэш для метаданных, чтобы не запрашивать их для каждого товара
@@ -486,6 +485,7 @@ const syncProcessor = {
 			const failedMapping = mappedResults.filter(r => !r.success);
 
 			// Отправляем ошибки маппинга в очередь
+			const queue = require("./queue");
 			for (const f of failedMapping) {
 				await queue.addToQueueSilent("product", f.original);
 			}
@@ -499,7 +499,6 @@ const syncProcessor = {
 				} catch (err) {
 					log(`[MASS-PROCESSOR] Ошибка пакета создания: ${err.message}. Перенос в очередь.`, "ERROR");
 					for (const item of toCreate) {
-						// Ищем оригинальный объект для очереди
 						const orig = batch.find(b => b.barcode === (item.barcodes?.[0]?.code128 || item.barcodes?.[0]?.ean13));
 						if (orig) await queue.addToQueueSilent("product", orig);
 					}
@@ -510,7 +509,7 @@ const syncProcessor = {
 			if (toUpdate.length > 0) {
 				try {
 					log(`[MASS-PROCESSOR] Отправка пакета на ОБНОВЛЕНИЕ (${toUpdate.length} шт.)`);
-					await msClient.request("POST", "/entity/product", toUpdate); // В МС Bulk PUT делается через POST на эндпоинт сущности
+					await msClient.request("POST", "/entity/product", toUpdate); 
 					updatedCount += toUpdate.length;
 				} catch (err) {
 					log(`[MASS-PROCESSOR] Ошибка пакета обновления: ${err.message}. Перенос в очередь.`, "ERROR");

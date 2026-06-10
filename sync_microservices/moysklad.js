@@ -5,7 +5,7 @@ const log = require("./logger");
 
 const msApiClient = axios.create({
 	baseURL: CONFIG.MS_API_BASE,
-	timeout: 30000, // Таймаут 30 секунд для всех запросов к МС
+	timeout: 90000, // Увеличиваем до 90 секунд для пакетных операций
 	headers: {
 		Authorization: `Bearer ${CONFIG.MS_API_Token}`,
 		"Content-Type": "application/json",
