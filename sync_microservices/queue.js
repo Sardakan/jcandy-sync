@@ -53,6 +53,14 @@ class SyncQueue {
 		log(`Задача добавлена в очередь: ${entity} (${id})`);
 		if (!this.isProcessing) this.process();
 	}
+
+	/**
+	 * Добавление в очередь без немедленного запуска (для ошибок миграции)
+	 */
+	async addToQueueSilent(entity, data) {
+		this.queue.push({ entity, data, attempts: 0 });
+		await this.save();
+	}
 	async process() {
 		if (this.queue.length === 0) {
 			this.isProcessing = false;

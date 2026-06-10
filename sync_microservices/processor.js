@@ -2,6 +2,7 @@ const CONFIG = require("./config");
 const log = require("./logger");
 const msClient = require("./moysklad");
 const { siteRequest } = require("./siteApi");
+const queue = require("./queue");
 
 const syncProcessor = {
 	/**
@@ -393,8 +394,98 @@ const syncProcessor = {
 		}
 	},
 	/**
-	 * Массовое создание/обновление товаров (для миграции)
+	 * Массовое создание/обновление товаров (для миграции) - ПАКЕТНАЯ ВЕРСИЯ
 	 */
+	async massCreateProducts(items) {
+		if (!items || items.length === 0) return;
+
+		log(`[MASS-PROCESSOR] Начинаю пакетную обработку ${items.length} товаров...`);
+		
+		const barcodes = items.map((i) => i.barcode).filter(Boolean);
+		const existingRows = await msClient.findProductsByBarcodes(barcodes);
+
+		// Карта существующих товаров: barcode -> id
+		const existingMap = new Map();
+		existingRows.forEach((row) => {
+			if (row.barcodes) {
+				row.barcodes.forEach((b) => {
+					const code = b.code128 || b.ean13;
+					if (code) existingMap.set(code, row.id);
+				});
+			}
+		});
+
+		let createdCount = 0;
+		let updatedCount = 0;
+		const batchSize = 10;
+
+		for (let i = 0; i < items.length; i += batchSize) {
+			const batch = items.slice(i, i + batchSize);
+			log(`[MASS-PROCESSOR] Обработка под-пачки ${i / batchSize + 1} (товары ${i + 1}-${Math.min(i + batchSize, items.length)})`);
+
+			// 1. Параллельный маппинг (подготовка данных и загрузка картинок)
+			const mappedResults = await Promise.all(batch.map(async (item) => {
+				try {
+					const msObj = await this.mapToMsProduct(item);
+					const existingId = existingMap.get(item.barcode);
+					if (existingId) msObj.id = existingId;
+					return { success: true, data: msObj, original: item };
+				} catch (err) {
+					log(`[MASS-PROCESSOR] Ошибка маппинга товара ${item.barcode}: ${err.message}`, "ERROR");
+					return { success: false, error: err.message, original: item };
+				}
+			}));
+
+			const toCreate = mappedResults.filter(r => r.success && !r.data.id).map(r => r.data);
+			const toUpdate = mappedResults.filter(r => r.success && r.data.id).map(r => r.data);
+			const failedMapping = mappedResults.filter(r => !r.success);
+
+			// Отправляем ошибки маппинга в очередь
+			for (const f of failedMapping) {
+				await queue.addToQueueSilent("product", f.original);
+			}
+
+			// 2. Пакетное создание (POST)
+			if (toCreate.length > 0) {
+				try {
+					log(`[MASS-PROCESSOR] Отправка пакета на СОЗДАНИЕ (${toCreate.length} шт.)`);
+					await msClient.request("POST", "/entity/product", toCreate);
+					createdCount += toCreate.length;
+				} catch (err) {
+					log(`[MASS-PROCESSOR] Ошибка пакета создания: ${err.message}. Перенос в очередь.`, "ERROR");
+					for (const item of toCreate) {
+						// Ищем оригинальный объект для очереди
+						const orig = batch.find(b => b.barcode === (item.barcodes?.[0]?.code128 || item.barcodes?.[0]?.ean13));
+						if (orig) await queue.addToQueueSilent("product", orig);
+					}
+				}
+			}
+
+			// 3. Пакетное обновление (PUT)
+			if (toUpdate.length > 0) {
+				try {
+					log(`[MASS-PROCESSOR] Отправка пакета на ОБНОВЛЕНИЕ (${toUpdate.length} шт.)`);
+					await msClient.request("POST", "/entity/product", toUpdate); // В МС Bulk PUT делается через POST на эндпоинт сущности
+					updatedCount += toUpdate.length;
+				} catch (err) {
+					log(`[MASS-PROCESSOR] Ошибка пакета обновления: ${err.message}. Перенос в очередь.`, "ERROR");
+					for (const item of toUpdate) {
+						const orig = batch.find(b => b.barcode === (item.barcodes?.[0]?.code128 || item.barcodes?.[0]?.ean13));
+						if (orig) await queue.addToQueueSilent("product", orig);
+					}
+				}
+			}
+			
+			// Небольшая пауза между под-пачками для стабильности
+			await new Promise(resolve => setTimeout(resolve, 500));
+		}
+
+		log(`[MASS-PROCESSOR] Миграция пачки завершена: Создано ${createdCount}, Обновлено ${updatedCount}. Ошибки отправлены в очередь.`);
+	},
+
+	/**
+	 * Старая версия (закомментирована)
+	 *
 	async massCreateProducts(items) {
 		if (!items || items.length === 0) return;
 
@@ -440,6 +531,7 @@ const syncProcessor = {
 		}
 		log(`[MASS-PROCESSOR] Миграция завершена: Всего ${items.length}, Создано ${createdCount}, Обновлено (перезаписано) ${updatedCount}`);
 	},
+	*/
 
 	/**
 	 * Синхронизация остатков на основе измененного документа МС
