@@ -292,7 +292,6 @@ const syncProcessor = {
 		// 1. Страна
 		let countryData = null;
 		if (data.country) {
-			log(`[DEBUG-MAP] ${barcode}: поиск страны ${data.country}`);
 			countryData = await msClient.getCountry(data.country);
 		}
 
@@ -391,10 +390,8 @@ const syncProcessor = {
 		
 		if (imageUrls.length > 0) {
 			try {
-				log(`[DEBUG-MAP] ${barcode}: загрузка изображения...`);
 				const imageData = await msClient.downloadImageAsBase64(imageUrls[0]);
 				if (imageData) msProduct.images = [imageData];
-				log(`[DEBUG-MAP] ${barcode}: изображение загружено`);
 			} catch (imgErr) {
 				log(`[DEBUG-MAP] ${barcode}: ошибка изображения: ${imgErr.message}`, "WARN");
 			}

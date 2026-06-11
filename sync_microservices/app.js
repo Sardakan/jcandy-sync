@@ -14,14 +14,64 @@ app.get("/ping", (req, res) => {
 	res.send("pong");
 });
 
+// --- ЭНДПОИНТЫ ДЛЯ РАБОТЫ С ЛОГАМИ ---
+app.get("/api/v1/admin/logs", async (req, res) => {
+	const fs = require("fs");
+	try {
+		if (fs.existsSync(CONFIG.LOG_FILE)) {
+			const logs = await fs.promises.readFile(CONFIG.LOG_FILE, "utf-8");
+			res.header("Content-Type", "text/plain; charset=utf-8");
+			res.send(logs);
+		} else {
+			res.status(404).send("Файл логов еще не создан");
+		}
+	} catch (err) {
+		res.status(500).send(`Ошибка чтения логов: ${err.message}`);
+	}
+});
+
+app.get("/api/v1/admin/logs/errors", async (req, res) => {
+	const fs = require("fs");
+	try {
+		if (fs.existsSync(CONFIG.LOG_FILE)) {
+			const logs = await fs.promises.readFile(CONFIG.LOG_FILE, "utf-8");
+			const errorLines = logs.split("\n").filter(line => line.includes("[ERROR]")).join("\n");
+			res.header("Content-Type", "text/plain; charset=utf-8");
+			res.send(errorLines || "Ошибок в логе не найдено");
+		} else {
+			res.status(404).send("Файл логов еще не создан");
+		}
+	} catch (err) {
+		res.status(500).send(`Ошибка фильтрации логов: ${err.message}`);
+	}
+});
+
+app.delete("/api/v1/admin/logs", async (req, res) => {
+	const fs = require("fs");
+	try {
+		await fs.promises.writeFile(CONFIG.LOG_FILE, "");
+		log("[ADMIN] Файл логов очищен");
+		res.json({ message: "Логи успешно очищены" });
+	} catch (err) {
+		res.status(500).json({ error: `Ошибка очистки логов: ${err.message}` });
+	}
+});
+
 /**
  * Функция самопрозвона для предотвращения засыпания Render
  */
 const keepAlive = () => {
 	const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost:' + CONFIG.PORT}/ping`;
-	log(`[KEEP-ALIVE] Пинг сервера: ${url}`);
+	
+	// Если очередь не пуста, продолжаем пинговать даже после миграции
+	if (queue.queue.length > 0 || queue.isProcessing) {
+		log(`🚀 [KEEP-ALIVE] >>> Очередь еще работает (${queue.queue.length} задач). Пинг: ${url} <<< 🚀`);
+	} else {
+		log(`🚀 [KEEP-ALIVE] >>> Пинг сервера: ${url} <<< 🚀`);
+	}
+
 	const axios = require("axios");
-	axios.get(url).catch(e => log(`[KEEP-ALIVE] Ошибка пинга: ${e.message}`, "WARN"));
+	axios.get(url).catch(e => log(`❌ [KEEP-ALIVE] Ошибка пинга: ${e.message}`, "WARN"));
 };
 
 // --- ТЕСТОВЫЕ ДАННЫЕ ДЛЯ МИГРАЦИИ ---
@@ -332,13 +382,28 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 					await new Promise((resolve) => setTimeout(resolve, 300));
 				}
 				log(`[MIGRATION] Массовая миграция завершена. Всего обработано: ${processedInThisRun}`);
+				
+				// После завершения миграции запускаем обработку накопившихся ошибок в очереди
+				if (queue.queue.length > 0) {
+					log(`[MIGRATION] Запуск обработки ошибок из очереди (${queue.queue.length} задач)...`);
+					queue.process();
+				}
 			} catch (err) {
 				log(`[MIGRATION-CRITICAL] Ошибка в фоновом процессе: ${err.message}`, "ERROR");
 				console.error(err);
 			} finally {
-				// Обязательно очищаем интервал по завершении (успех или ошибка)
-				clearInterval(keepAliveInterval);
-				log(`[KEEP-ALIVE] Интервал самопрозвона очищен.`);
+				// Продлеваем keepAlive, если очередь еще не пуста
+				const checkAndClear = () => {
+					if (queue.queue.length === 0 && !queue.isProcessing) {
+						clearInterval(keepAliveInterval);
+						log(`[KEEP-ALIVE] Очередь пуста. Интервал самопрозвона очищен.`);
+					} else {
+						log(`[KEEP-ALIVE] Очередь еще в процессе (${queue.queue.length} задач), продлеваю активность...`);
+					}
+				};
+
+				// Проверяем состояние очереди каждые 10 минут
+				setTimeout(checkAndClear, 10 * 60 * 1000);
 			}
 		}, 0);
 	} catch (e) {		log(`[MIGRATION] Ошибка при запуске миграции: ${e.message}`, "ERROR");

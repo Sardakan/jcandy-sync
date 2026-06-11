@@ -144,14 +144,30 @@ const msClient = {
 	},	
 	async getCountry(name) {
 		if (!name) return null;
+		const cacheKey = `country:${name}`;
+		if (this.cache[cacheKey]) return this.cache[cacheKey];
+
 		try {
 			const response = await this.request("GET", `/entity/country?filter=name=${encodeURIComponent(name)}`);
-			return response.data.rows && response.data.rows.length > 0 ? response.data.rows[0] : null;
+			if (response.data.rows && response.data.rows.length > 0) {
+				this.cache[cacheKey] = response.data.rows[0];
+				return this.cache[cacheKey];
+			}
+
+			// Если страна не найдена — создаем её
+			log(`Страна "${name}" не найдена в МС. Создаю...`, "INFO");
+			const createResponse = await this.request("POST", "/entity/country", {
+				name: name
+			});
+			
+			this.cache[cacheKey] = createResponse.data;
+			return this.cache[cacheKey];
 		} catch (error) {
-			log(`Ошибка при поиске страны ${name}: ${error.message}`, "ERROR");
+			log(`Ошибка при работе со страной ${name}: ${error.message}`, "ERROR");
 			return null;
 		}
 	},
+
 	async getCountryByHref(href) {
 		if (!href) return null;
 		try {

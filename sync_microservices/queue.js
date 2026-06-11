@@ -64,11 +64,13 @@ class SyncQueue {
 	async process() {
 		if (this.queue.length === 0) {
 			this.isProcessing = false;
+			log("[QUEUE] Очередь пуста, обработка завершена.");
 			return;
 		}
 
 		this.isProcessing = true;
 		const task = this.queue[0];
+		log(`[QUEUE] Обработка задачи из очереди (${this.queue.length} осталось): ${task.entity}`);
 
 		try {
 			await syncProcessor.handle(task);
