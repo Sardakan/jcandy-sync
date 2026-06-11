@@ -9,6 +9,21 @@ const syncProcessor = require("./processor");
 const app = express();
 app.use(express.json());
 
+// --- ЭНДПОИНТ ДЛЯ ПОДДЕРЖАНИЯ АКТИВНОСТИ (ANTI-SLEEP) ---
+app.get("/ping", (req, res) => {
+	res.send("pong");
+});
+
+/**
+ * Функция самопрозвона для предотвращения засыпания Render
+ */
+const keepAlive = () => {
+	const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost:' + CONFIG.PORT}/ping`;
+	log(`[KEEP-ALIVE] Пинг сервера: ${url}`);
+	const axios = require("axios");
+	axios.get(url).catch(e => log(`[KEEP-ALIVE] Ошибка пинга: ${e.message}`, "WARN"));
+};
+
 // --- ТЕСТОВЫЕ ДАННЫЕ ДЛЯ МИГРАЦИИ ---
 const TEST_DATA = {
 	products: ["MS-TEST-0001", "MS-TEST-0002", "MS-TEST-0003", "MS-TEST-0004", "OZN367831744"],
@@ -280,6 +295,9 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 
 		// 2. Запускаем фоновый процесс через setTimeout, чтобы не блокировать ответ
 		setTimeout(async () => {
+			// Запускаем интервал самопрозвона каждые 10 минут
+			const keepAliveInterval = setInterval(keepAlive, 10 * 60 * 1000);
+			
 			try {
 				log(`[MIGRATION-BACKGROUND] Фоновый процесс начал работу. Офсет: ${offset}`);
 				let currentOffset = offset;
@@ -310,13 +328,17 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 						break;
 					}
 
-					// Пауза 1000мс (1 сек), чтобы Render и API сайта успели "остыть"
-					await new Promise((resolve) => setTimeout(resolve, 1000));
+					// Пауза 300мс, чтобы не перегружать API сайта
+					await new Promise((resolve) => setTimeout(resolve, 300));
 				}
 				log(`[MIGRATION] Массовая миграция завершена. Всего обработано: ${processedInThisRun}`);
 			} catch (err) {
 				log(`[MIGRATION-CRITICAL] Ошибка в фоновом процессе: ${err.message}`, "ERROR");
 				console.error(err);
+			} finally {
+				// Обязательно очищаем интервал по завершении (успех или ошибка)
+				clearInterval(keepAliveInterval);
+				log(`[KEEP-ALIVE] Интервал самопрозвона очищен.`);
 			}
 		}, 0);
 	} catch (e) {		log(`[MIGRATION] Ошибка при запуске миграции: ${e.message}`, "ERROR");

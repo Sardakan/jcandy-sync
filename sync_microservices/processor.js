@@ -460,7 +460,7 @@ const syncProcessor = {
 
 		let createdCount = 0;
 		let updatedCount = 0;
-		const batchSize = 5; // Уменьшаем до 5, чтобы избежать таймаутов из-за тяжелых картинок
+		const batchSize = 25; // Возвращаемся к пакетной обработке по 25 товаров
 
 		for (let i = 0; i < items.length; i += batchSize) {
 			const batch = items.slice(i, i + batchSize);
@@ -522,7 +522,7 @@ const syncProcessor = {
 			}
 			
 			// Небольшая пауза между под-пачками для стабильности
-			await new Promise(resolve => setTimeout(resolve, 500));
+			await new Promise(resolve => setTimeout(resolve, 15000));
 		}
 
 		log(`[MASS-PROCESSOR] Миграция пачки завершена: Создано ${createdCount}, Обновлено ${updatedCount}. Ошибки отправлены в очередь.`);
