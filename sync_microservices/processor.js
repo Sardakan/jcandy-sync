@@ -285,11 +285,11 @@ const syncProcessor = {
 	/**
 	 * Вспомогательный метод для маппинга данных сайта в формат МойСклад
 	 */
-	async mapToMsProduct(siteData) {
+	async mapToMsProduct(siteData, skipImages = false) {
 		const data = siteData.data || siteData.product || siteData;
 		const barcode = data.barcode || "no-barcode";
 		
-		// 1. Страна
+		// ... (код страны и магазина)
 		let countryData = null;
 		if (data.country) {
 			countryData = await msClient.getCountry(data.country);
@@ -386,14 +386,16 @@ const syncProcessor = {
 		if (countryData) msProduct.country = { meta: countryData.meta };
 
 		// 6. Изображения (Самое вероятное место зависания)
-		const imageUrls = data.imageUrls || (data.media && data.media.images ? data.media.images.map((img) => img.url) : []);
-		
-		if (imageUrls.length > 0) {
-			try {
-				const imageData = await msClient.downloadImageAsBase64(imageUrls[0]);
-				if (imageData) msProduct.images = [imageData];
-			} catch (imgErr) {
-				log(`[DEBUG-MAP] ${barcode}: ошибка изображения: ${imgErr.message}`, "WARN");
+		if (!skipImages) {
+			const imageUrls = data.imageUrls || (data.media && data.media.images ? data.media.images.map((img) => img.url) : []);
+			
+			if (imageUrls.length > 0) {
+				try {
+					const imageData = await msClient.downloadImageAsBase64(imageUrls[0]);
+					if (imageData) msProduct.images = [imageData];
+				} catch (imgErr) {
+					log(`[DEBUG-MAP] ${barcode}: ошибка изображения: ${imgErr.message}`, "WARN");
+				}
 			}
 		}
 
@@ -468,7 +470,7 @@ const syncProcessor = {
 			for (const item of batch) {
 				try {
 					log(`[MASS-PROCESSOR] Маппинг товара: ${item.barcode} (${item.title || 'no title'})`);
-					const msObj = await this.mapToMsProduct(item);
+					const msObj = await this.mapToMsProduct(item, true); // true = skipImages
 					const existingId = existingMap.get(item.barcode);
 					if (existingId) msObj.id = existingId;
 					mappedResults.push({ success: true, data: msObj, original: item });
