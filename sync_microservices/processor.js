@@ -470,7 +470,7 @@ const syncProcessor = {
 			for (const item of batch) {
 				try {
 					log(`[MASS-PROCESSOR] Маппинг товара: ${item.barcode} (${item.title || 'no title'})`);
-					const msObj = await this.mapToMsProduct(item, true); // true = skipImages
+					const msObj = await this.mapToMsProduct(item, false); // false = вернуть картинки
 					const existingId = existingMap.get(item.barcode);
 					if (existingId) msObj.id = existingId;
 					mappedResults.push({ success: true, data: msObj, original: item });
