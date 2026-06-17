@@ -392,18 +392,24 @@ app.post("/api/v1/admin/mass-migrate-products", async (req, res) => {
 				log(`[MIGRATION-CRITICAL] Ошибка в фоновом процессе: ${err.message}`, "ERROR");
 				console.error(err);
 			} finally {
-				// Продлеваем keepAlive, если очередь еще не пуста
-				const checkAndClear = () => {
+				// Функция для проверки: можно ли выключать пинг
+				const stopPingIfDone = () => {
 					if (queue.queue.length === 0 && !queue.isProcessing) {
 						clearInterval(keepAliveInterval);
-						log(`[KEEP-ALIVE] Очередь пуста. Интервал самопрозвона очищен.`);
-					} else {
-						log(`[KEEP-ALIVE] Очередь еще в процессе (${queue.queue.length} задач), продлеваю активность...`);
+						log(`[KEEP-ALIVE] Работа полностью завершена (миграция + очередь). Интервал самопрозвона очищен.`);
+						return true;
 					}
+					return false;
 				};
 
-				// Проверяем состояние очереди каждые 10 минут
-				setTimeout(checkAndClear, 10 * 60 * 1000);
+				// Проверяем сразу, и если не готово — запускаем периодическую проверку
+				if (!stopPingIfDone()) {
+					const checkTimer = setInterval(() => {
+						if (stopPingIfDone()) {
+							clearInterval(checkTimer);
+						}
+					}, 60 * 1000); // Проверяем каждую минуту, не пора ли выключить пинг
+				}
 			}
 		}, 0);
 	} catch (e) {		log(`[MIGRATION] Ошибка при запуске миграции: ${e.message}`, "ERROR");

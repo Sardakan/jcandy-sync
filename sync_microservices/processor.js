@@ -349,7 +349,7 @@ const syncProcessor = {
 			description: data.description || "",
 			attributes: msAttributes,
 			externalCode: String(data.externalId || ""),
-			article: data.slug || undefined,
+			article: data.sku || undefined,
 		};
 
 		if (data.barcode) msProduct.barcodes = [{ code128: data.barcode }];
