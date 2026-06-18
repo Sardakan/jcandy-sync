@@ -65,13 +65,13 @@ const keepAlive = () => {
 	
 	// Если очередь не пуста, продолжаем пинговать даже после миграции
 	if (queue.queue.length > 0 || queue.isProcessing) {
-		log(`🚀 [KEEP-ALIVE] >>> Очередь еще работает (${queue.queue.length} задач). Пинг: ${url} <<< 🚀`);
+		log(`[KEEP-ALIVE] >>> Очередь еще работает (${queue.queue.length} задач). Пинг: ${url} <<<`);
 	} else {
-		log(`🚀 [KEEP-ALIVE] >>> Пинг сервера: ${url} <<< 🚀`);
+		log(`[KEEP-ALIVE] >>> Пинг сервера: ${url} <<<`);
 	}
 
 	const axios = require("axios");
-	axios.get(url).catch(e => log(`❌ [KEEP-ALIVE] Ошибка пинга: ${e.message}`, "WARN"));
+	axios.get(url).catch(e => log(`[KEEP-ALIVE] Ошибка пинга: ${e.message}`, "WARN"));
 };
 
 // --- ТЕСТОВЫЕ ДАННЫЕ ДЛЯ МИГРАЦИИ ---
@@ -186,7 +186,6 @@ async function handleWebhook(req, res) {
 				updatedFields: e.updatedFields || []
 			}));
 
-		/* 
 		// 1. Массовая обработка обновлений карточек товаров
 		if (productUpdates.length > 0) {
 			log(`[MS WEBHOOK] Начинаю загрузку данных для ${productUpdates.length} товаров из МС...`);
@@ -199,7 +198,6 @@ async function handleWebhook(req, res) {
 				.then(() => log(`[MS WEBHOOK] Массовая синхронизация успешно завершена`))
 				.catch(e => log(`[MS WEBHOOK] КРИТИЧЕСКАЯ ОШИБКА массовой синхронизации: ${e.message}`, "ERROR"));
 		}
-		*/		
 		for (const event of events) {
 			const type = event.meta.type;
 
@@ -429,6 +427,20 @@ app.post("/api/v1/webhooks/ms", handleWebhook);
 app.post("/", handleWebhook); // Резервный путь для корня
 
 // --- ЗАПУСК СЕРВЕРА ---
-app.listen(CONFIG.PORT, () => {
-	log(`Сервер синхронизации запущен на порту ${CONFIG.PORT}`);
-});
+try {
+	const server = app.listen(CONFIG.PORT, () => {
+		log(`Сервер синхронизации запущен на порту ${CONFIG.PORT}`);
+	});
+
+	server.on('error', (err) => {
+		if (err.code === 'EADDRINUSE') {
+			log(`[FATAL] Порт ${CONFIG.PORT} уже занят. Сервер не может быть запущен.`, "ERROR");
+		} else {
+			log(`[FATAL] Ошибка при запуске сервера: ${err.message}`, "ERROR");
+		}
+		process.exit(1);
+	});
+} catch (err) {
+	log(`[FATAL] Критическая ошибка инициализации: ${err.message}`, "ERROR");
+	process.exit(1);
+}

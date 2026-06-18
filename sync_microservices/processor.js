@@ -2,9 +2,9 @@ const CONFIG = require("./config");
 const log = require("./logger");
 const msClient = require("./moysklad");
 const { siteRequest } = require("./siteApi");
+const queue = require("./queue");
 
-const syncProcessor = {
-	// Кэш для метаданных, чтобы не запрашивать их для каждого товара
+const syncProcessor = {	// Кэш для метаданных, чтобы не запрашивать их для каждого товара
 	metadataCache: {
 		attributes: {},
 		stores: {}
@@ -459,18 +459,35 @@ const syncProcessor = {
 
 		let createdCount = 0;
 		let updatedCount = 0;
-		const batchSize = 25; // Возвращаемся к пакетной обработке по 25 товаров
+		const batchSize = 25;
+
+		// Вспомогательная функция для отправки батча (DRY)
+		const sendBatch = async (label, data, originalBatch) => {
+			if (data.length === 0) return 0;
+			try {
+				log(`[MASS-PROCESSOR] Отправка пакета на ${label} (${data.length} шт.)`);
+				await msClient.request("POST", "/entity/product", data);
+				return data.length;
+			} catch (err) {
+				log(`[MASS-PROCESSOR] Ошибка пакета ${label}: ${err.message}. Перенос в очередь.`, "ERROR");
+				for (const item of data) {
+					const barcode = item.barcodes?.[0]?.code128 || item.barcodes?.[0]?.ean13;
+					const orig = originalBatch.find(b => b.barcode === barcode);
+					if (orig) await queue.addToQueueSilent("product", orig);
+				}
+				return 0;
+			}
+		};
 
 		for (let i = 0; i < items.length; i += batchSize) {
 			const batch = items.slice(i, i + batchSize);
 			log(`[MASS-PROCESSOR] Обработка под-пачки ${i / batchSize + 1} (товары ${i + 1}-${Math.min(i + batchSize, items.length)})`);
 
-			// 1. Последовательный маппинг (экономим память на Render Free Tier)
 			const mappedResults = [];
 			for (const item of batch) {
 				try {
 					log(`[MASS-PROCESSOR] Маппинг товара: ${item.barcode} (${item.title || 'no title'})`);
-					const msObj = await this.mapToMsProduct(item, false); // false = вернуть картинки
+					const msObj = await this.mapToMsProduct(item, false);
 					const existingId = existingMap.get(item.barcode);
 					if (existingId) msObj.id = existingId;
 					mappedResults.push({ success: true, data: msObj, original: item });
@@ -484,98 +501,20 @@ const syncProcessor = {
 			const toUpdate = mappedResults.filter(r => r.success && r.data.id).map(r => r.data);
 			const failedMapping = mappedResults.filter(r => !r.success);
 
-			// Отправляем ошибки маппинга в очередь
-			const queue = require("./queue");
 			for (const f of failedMapping) {
 				await queue.addToQueueSilent("product", f.original);
 			}
 
-			// 2. Пакетное создание (POST)
-			if (toCreate.length > 0) {
-				try {
-					log(`[MASS-PROCESSOR] Отправка пакета на СОЗДАНИЕ (${toCreate.length} шт.)`);
-					await msClient.request("POST", "/entity/product", toCreate);
-					createdCount += toCreate.length;
-				} catch (err) {
-					log(`[MASS-PROCESSOR] Ошибка пакета создания: ${err.message}. Перенос в очередь.`, "ERROR");
-					for (const item of toCreate) {
-						const orig = batch.find(b => b.barcode === (item.barcodes?.[0]?.code128 || item.barcodes?.[0]?.ean13));
-						if (orig) await queue.addToQueueSilent("product", orig);
-					}
-				}
-			}
-
-			// 3. Пакетное обновление (PUT)
-			if (toUpdate.length > 0) {
-				try {
-					log(`[MASS-PROCESSOR] Отправка пакета на ОБНОВЛЕНИЕ (${toUpdate.length} шт.)`);
-					await msClient.request("POST", "/entity/product", toUpdate); 
-					updatedCount += toUpdate.length;
-				} catch (err) {
-					log(`[MASS-PROCESSOR] Ошибка пакета обновления: ${err.message}. Перенос в очередь.`, "ERROR");
-					for (const item of toUpdate) {
-						const orig = batch.find(b => b.barcode === (item.barcodes?.[0]?.code128 || item.barcodes?.[0]?.ean13));
-						if (orig) await queue.addToQueueSilent("product", orig);
-					}
-				}
-			}
+			createdCount += await sendBatch("СОЗДАНИЕ", toCreate, batch);
+			updatedCount += await sendBatch("ОБНОВЛЕНИЕ", toUpdate, batch);
 			
-			// Небольшая пауза между под-пачками для стабильности
-			await new Promise(resolve => setTimeout(resolve, 15000));
+			if (i + batchSize < items.length) {
+				await new Promise(resolve => setTimeout(resolve, 15000));
+			}
 		}
 
 		log(`[MASS-PROCESSOR] Миграция пачки завершена: Создано ${createdCount}, Обновлено ${updatedCount}. Ошибки отправлены в очередь.`);
 	},
-
-	/**
-	 * Старая версия (закомментирована)
-	 *
-	async massCreateProducts(items) {
-		if (!items || items.length === 0) return;
-
-		const barcodes = items.map((i) => i.barcode).filter(Boolean);
-		const existingRows = await msClient.findProductsByBarcodes(barcodes);
-
-		// Карта существующих товаров: barcode -> id
-		const existingMap = new Map();
-		existingRows.forEach((row) => {
-			if (row.barcodes) {
-				row.barcodes.forEach((b) => {
-					const code = b.code128 || b.ean13;
-					if (code) existingMap.set(code, row.id);
-				});
-			}
-		});
-
-		let createdCount = 0;
-		let updatedCount = 0;
-		let currentIdx = 0;
-
-		for (const item of items) {
-			currentIdx++;
-			try {
-				log(`[MASS-PROCESSOR] Обработка ${currentIdx}/${items.length}: ${item.barcode} (${item.title})`);
-				const msObj = await this.mapToMsProduct(item);
-				const existingId = existingMap.get(item.barcode);
-
-				if (existingId) {
-					// Полная перезапись существующего товара
-					log(`[MASS-PROCESSOR] Обновление товара в МС: ${item.barcode}`);
-					await msClient.request("PUT", `/entity/product/${existingId}`, msObj);
-					updatedCount++;
-				} else {
-					// Создание нового
-					log(`[MASS-PROCESSOR] Создание нового товара в МС: ${item.barcode}`);
-					await msClient.request("POST", "/entity/product", msObj);
-					createdCount++;
-				}			
-			} catch (e) {
-				log(`[MASS-PROCESSOR] Ошибка обработки товара ${item.barcode}: ${e.message}`, "ERROR");
-			}
-		}
-		log(`[MASS-PROCESSOR] Миграция завершена: Всего ${items.length}, Создано ${createdCount}, Обновлено (перезаписано) ${updatedCount}`);
-	},
-	*/
 
 	/**
 	 * Синхронизация остатков на основе измененного документа МС
