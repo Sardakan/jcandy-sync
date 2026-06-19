@@ -202,6 +202,7 @@ async function handleWebhook(req, res) {
 			const type = event.meta.type;
 
 			// 2. Обработка остатков (только документы)
+			/* 
 			if (["customerorder", "supply", "demand"].includes(type)) {
 				log(`[MS WEBHOOK] Изменение остатков в документе ${type}`);
 				try {
@@ -213,7 +214,7 @@ async function handleWebhook(req, res) {
 					log(`Ошибка при получении данных документа для остатков: ${e.message}`, "ERROR");
 				}
 			}
-
+			*/
 			// 3. Обработка контрагентов (из МС на сайт)
 			if (type === "counterparty" && event.action === "UPDATE") {
 				log(`[MS WEBHOOK] Обновление контрагента`);
