@@ -7,6 +7,9 @@ const CONFIG = {
 	QUEUE_FILE: path.join(__dirname, "queue.json"),
 	FAILED_QUEUE_FILE: path.join(__dirname, "failed_queue.json"),
 	LOG_FILE: path.join(__dirname, "sync.log"),
+	LOG_RETENTION_DAYS: Number(process.env.LOG_RETENTION_DAYS) || 7,
+	LOG_MAX_SIZE_MB: Number(process.env.LOG_MAX_SIZE_MB) || 100,
+	LOG_CLEANUP_INTERVAL_MS: 24 * 60 * 60 * 1000, // раз в день
 	MS_API_BASE: "https://api.moysklad.ru/api/remap/1.2",
 	SYNC_DELAY: 3000,
 	MS_API_Token: process.env.MS_API_TOKEN,

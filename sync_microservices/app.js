@@ -47,9 +47,8 @@ app.get("/api/v1/admin/logs/errors", async (req, res) => {
 });
 
 app.delete("/api/v1/admin/logs", async (req, res) => {
-	const fs = require("fs");
 	try {
-		await fs.promises.writeFile(CONFIG.LOG_FILE, "");
+		await log.clear();
 		log("[ADMIN] Файл логов очищен");
 		res.json({ message: "Логи успешно очищены" });
 	} catch (err) {
@@ -431,6 +430,7 @@ app.post("/", handleWebhook); // Резервный путь для корня
 try {
 	const server = app.listen(CONFIG.PORT, () => {
 		log(`Сервер синхронизации запущен на порту ${CONFIG.PORT}`);
+		log.startMaintenance();
 	});
 
 	server.on('error', (err) => {

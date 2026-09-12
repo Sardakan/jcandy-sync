@@ -122,12 +122,152 @@ const syncProcessor = {	// Кэш для метаданных, чтобы не �
 		}
 	},
 
+	async syncSalesReturn(order, msOrder) {
+		const externalCode = order.orderId || order.id;
+		if (!externalCode) throw new Error("Для возврата не указан идентификатор заказа");
+		const returnedItems = this.getReturnedItems(order);
+		const demandMeta = msOrder.demands?.[0]?.meta;
+		if (!demandMeta) throw new Error(`У заказа ${externalCode} отсутствует отгрузка`);
+
+		const demandPositions = await msClient.loadDocumentPositions(demandMeta.href);
+		const positions = await this.buildSalesReturnPositions(returnedItems, demandPositions);
+		const payload = this.buildSalesReturnPayload(msOrder, demandMeta, externalCode, positions);
+		const existingReturn = await msClient.findSalesReturnByExternalCode(externalCode);
+		const salesReturn = existingReturn
+			? await msClient.updateSalesReturn(existingReturn.id, payload)
+			: await msClient.createSalesReturn(payload);
+
+		if (existingReturn) log(`[PROCESSOR] Обновляю возврат покупателя для заказа ${externalCode}`);
+		else log(`[PROCESSOR] Создаю возврат покупателя для заказа ${externalCode}`);
+		await this.updateOrderState(msOrder.id, order.status);
+		return salesReturn;
+	},
+
+	getReturnedItems(order) {
+		if (!Array.isArray(order.returnedItems) || order.returnedItems.length === 0) {
+			throw new Error("Для возврата необходим непустой массив returnedItems");
+		}
+		return order.returnedItems;
+	},
+
+	async buildSalesReturnPositions(items, demandPositions) {
+		const quantitiesByBarcode = this.sumSalesReturnItems(items);
+		const positions = [];
+		for (const [barcode, quantity] of quantitiesByBarcode) {
+			const product = await msClient.findProductByBarcode(barcode);
+			if (!product) throw new Error(`Товар ${barcode} не найден в МойСклад`);
+			const demandPosition = demandPositions.find((position) => position.assortment?.meta?.href === product.meta.href);
+			if (!demandPosition) throw new Error(`Товар ${barcode} отсутствует в первой отгрузке`);
+			if (quantity > demandPosition.quantity) {
+				throw new Error(`Количество возврата ${barcode} больше количества в отгрузке`);
+			}
+
+			positions.push({
+				quantity,
+				price: demandPosition.price,
+				vat: demandPosition.vat,
+				assortment: { meta: product.meta },
+			});
+		}
+		return positions;
+	},
+
+	sumSalesReturnItems(items) {
+		const quantitiesByBarcode = new Map();
+		for (const item of items) {
+			const barcode = String(item.barcode || "").trim();
+			const quantity = Number(item.quantity);
+			if (!barcode || !Number.isFinite(quantity) || quantity <= 0) {
+				throw new Error("Каждая возвращаемая позиция должна содержать barcode и положительное quantity");
+			}
+			quantitiesByBarcode.set(barcode, (quantitiesByBarcode.get(barcode) || 0) + quantity);
+		}
+		return quantitiesByBarcode;
+	},
+
+	async syncReturnedOrderWithoutDemand(order, msOrder) {
+		const positionsUrl = msOrder.positions?.meta?.href;
+		if (!positionsUrl) throw new Error(`Заказ ${order.orderId || order.id} не содержит ссылки на позиции`);
+
+		const currentPositions = await msClient.loadDocumentPositions(positionsUrl);
+		const quantitiesByBarcode = this.sumSalesReturnItems(this.getReturnedItems(order));
+		for (const [barcode, quantity] of quantitiesByBarcode) {
+			const product = await msClient.findProductByBarcode(barcode);
+			if (!product) throw new Error(`Товар ${barcode} не найден в МойСклад`);
+			const position = currentPositions.find((item) => item.assortment?.meta?.href === product.meta.href);
+			if (!position) throw new Error(`Товар ${barcode} отсутствует в заказе МойСклад`);
+			if (!Number.isFinite(position.quantity) || quantity > position.quantity) {
+				throw new Error(`Количество возврата ${barcode} больше количества в заказе`);
+			}
+			position.quantity -= quantity;
+		}
+
+		const positions = currentPositions
+			.filter((position) => position.quantity > 0)
+			.map((position) => ({
+				quantity: position.quantity,
+				price: position.price,
+				vat: position.vat,
+				assortment: position.assortment,
+			}));
+		const payload = { positions };
+		const state = this.getOrderStateMeta(order.status);
+		if (state) payload.state = state;
+		const response = await msClient.request("PUT", `/entity/customerorder/${msOrder.id}`, payload);
+		log(`[PROCESSOR] Позиции заказа ${order.orderId || order.id} обновлены после возврата`);
+		return response.data;
+	},
+
+	getOrderStateMeta(status) {
+		if (!status) return null;
+		const stateHref = CONFIG.ORDER_STATES[status];
+		if (!stateHref) throw new Error(`Неизвестный статус заказа: ${status}`);
+		return {
+			meta: {
+				href: stateHref,
+				type: "state",
+				mediaType: "application/json",
+			},
+		};
+	},
+
+	async updateOrderState(orderId, status) {
+		const state = this.getOrderStateMeta(status);
+		if (state) await msClient.request("PUT", `/entity/customerorder/${orderId}`, { state });
+	},
+
+	buildSalesReturnPayload(order, demandMeta, externalCode, positions) {
+		if (!order.organization?.meta || !order.store?.meta) {
+			throw new Error(`У заказа ${externalCode} отсутствует организация или склад`);
+		}
+		return {
+			externalCode,
+			demand: { meta: demandMeta },
+			organization: order.organization,
+			store: order.store,
+			agent: order.agent,
+			contract: order.contract,
+			salesChannel: order.salesChannel,
+			vatEnabled: order.vatEnabled,
+			vatIncluded: order.vatIncluded,
+			positions,
+		};
+	},
+
+
 	/**
 	 * Синхронизация заказа
 	 */
 	async syncOrder(siteData) {
 		const order = siteData.order || siteData;
 		log(`[PROCESSOR] Синхронизация заказа: ${order.id}`);
+		if (order.return === true) {
+			const externalCode = order.orderId || order.id;
+			const existingOrder = await msClient.findOrderByExternalCode(externalCode);
+			if (!existingOrder) throw new Error(`Заказ ${externalCode} не найден в МойСклад`);
+			if (existingOrder.demands?.length > 0) return this.syncSalesReturn(order, existingOrder);
+			return this.syncReturnedOrderWithoutDemand(order, existingOrder);
+		}
 
 		// 1. Поиск или создание контрагента
 		const agentMeta = await this.syncCounterparty(order);
@@ -221,15 +361,10 @@ const syncProcessor = {	// Кэш для метаданных, чтобы не �
 					mediaType: "application/json",
 				},
 			},
-			state: {				
-				meta: {
-					href: CONFIG.ORDER_STATES[order.status] || CONFIG.ORDER_STATES["pending"],
-					type: "state",
-					mediaType: "application/json",
-				},
-			},
 			positions: positions,
 		};
+		const state = this.getOrderStateMeta(order.status);
+		if (state) msOrder.state = state;
 
 		try {
 			// Проверяем, существует ли заказ в МС
@@ -237,12 +372,13 @@ const syncProcessor = {	// Кэш для метаданных, чтобы не �
 
 			let orderResult;
 			if (existingOrder) {
-				// Если заказ есть — обновляем только статус
-				const response = await msClient.request("PUT", `/entity/customerorder/${existingOrder.id}`, {
-					state: msOrder.state
-				});
-				orderResult = response.data;
-				log(`[PROCESSOR] Статус заказа ${msOrder.externalCode} обновлен в МС`);
+				if (state) {
+					const response = await msClient.request("PUT", `/entity/customerorder/${existingOrder.id}`, { state });
+					orderResult = response.data;
+					log(`[PROCESSOR] Статус заказа ${msOrder.externalCode} обновлен в МС`);
+				} else {
+					orderResult = existingOrder;
+				}
 			} else {
 				// Если заказа нет — создаем новый
 				const response = await msClient.request("POST", "/entity/customerorder", msOrder);

@@ -192,12 +192,30 @@ const msClient = {
 	async findOrderByExternalCode(externalCode) {		
 		if (!externalCode) return null;
 		try {
-			const response = await this.request("GET", `/entity/customerorder?filter=externalCode=${externalCode}`);
+			const response = await this.request("GET", `/entity/customerorder?filter=externalCode=${encodeURIComponent(externalCode)}`);
 			return response.data.rows && response.data.rows.length > 0 ? response.data.rows[0] : null;
 		} catch (error) {
 			log(`Ошибка при поиске заказа по externalCode ${externalCode}: ${error.message}`, "ERROR");
 			return null;
 		}
+	},
+	async findSalesReturnByExternalCode(externalCode) {
+		if (!externalCode) return null;
+		const response = await this.request("GET", `/entity/salesreturn?filter=externalCode=${encodeURIComponent(externalCode)}`);
+		return response.data.rows?.[0] || null;
+	},
+	async createSalesReturn(data) {
+		const response = await this.request("POST", "/entity/salesreturn", data);
+		return response.data;
+	},
+	async updateSalesReturn(id, data) {
+		const response = await this.request("PUT", `/entity/salesreturn/${id}`, data);
+		return response.data;
+	},
+	async loadDocumentPositions(positionsUrl) {
+		const apiPath = positionsUrl.replace(CONFIG.MS_API_BASE, "");
+		const response = await this.request("GET", apiPath);
+		return response.data.rows || [];
 	},
 	async ensureAttribute(name, type) {		try {
 			const metadata = await this.request("GET", "/entity/product/metadata/attributes");
@@ -277,11 +295,6 @@ const msClient = {
 		}
 	},
 	// --- ФУНКЦИИ ДЛЯ РАБОТЫ С ОСТАТКАМИ ---
-	async loadDocumentPositions(positionsUrl) {
-		const apiPath = positionsUrl.replace(CONFIG.MS_API_BASE, "");
-		const response = await this.request("GET", apiPath);
-		return response.data.rows || [];
-	},
 	async loadProductsFromAssortment(productIds) {
 		const uniqueProductIds = [...new Set(productIds)];
 		const idsFilter = uniqueProductIds.map(id => `id=${id}`).join(";");
